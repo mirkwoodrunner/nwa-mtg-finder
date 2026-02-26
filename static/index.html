@@ -380,8 +380,9 @@ function loadingCards(){
 
 function renderStoreCard(s){
   const searchUrl=s.search_url||`${s.url}/search?q=${encodeURIComponent(currentQuery)}&type=product`;
-  const results=s.results||[];
-  const inStk=results.filter(r=>r.available&&r.price);
+  // Only show in-stock items
+  const results=(s.results||[]).filter(r=>r.available);
+  const inStk=results.filter(r=>r.price);
   const minP=inStk.length?Math.min(...inStk.map(r=>r.price)):null;
   let bh,body;
   if(s.error&&results.length===0){
@@ -401,7 +402,7 @@ function renderStoreCard(s){
       return`<a class="rr" href="${r.url}" target="_blank" ${dim}>
         <div class="ri"><div class="rt">${r.name}</div>${r.set?`<div class="rs">${r.set}</div>`:''}</div>
         <div class="rright"><div class="rp ${best?'best':''}">${ps}</div>
-          ${r.available?`<div class="rstk">In stock</div>`:`<div class="roos">Out of stock</div>`}</div>
+              <div class="rstk">In stock</div></div>
       </a>`;}).join('');
   }
   return`<div class="store-card" id="sc-${s.id}">
