@@ -1,6 +1,7 @@
 services:
   - type: web
     name: nwa-mtg-finder
-    env: docker
+    runtime: docker
+    plan: free
     healthCheckPath: /health
     dockerfilePath: ./Dockerfile
