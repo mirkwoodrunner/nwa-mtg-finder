@@ -1,10 +1,6 @@
 services:
   - type: web
     name: nwa-mtg-finder
-    env: python
-    buildCommand: pip install -r requirements.txt && python -m playwright install chromium --with-deps
-    startCommand: gunicorn app:app --workers 1 --timeout 60 --bind 0.0.0.0:$PORT
+    env: docker
     healthCheckPath: /health
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
+    dockerfilePath: ./Dockerfile

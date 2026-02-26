@@ -16,6 +16,7 @@
    - `app.py`
    - `requirements.txt`
    - `render.yaml`
+   - `Dockerfile`
    - `static/index.html`  ← make sure to upload this inside a `static/` folder
 6. Click **Commit changes**
 
@@ -26,12 +27,9 @@
 1. Go to **render.com** and sign up (free)
 2. Click **New +** → **Web Service**
 3. Connect your GitHub account and select the `nwa-mtg-finder` repo
-4. Render will auto-detect the `render.yaml` — if not, use these settings:
-   - **Build Command:** `pip install -r requirements.txt && python -m playwright install chromium --with-deps`
-   - **Start Command:** `gunicorn app:app --workers 1 --timeout 60 --bind 0.0.0.0:$PORT`
-   - **Instance Type:** Free
+4. Render will auto-detect the `render.yaml` — make sure **Environment** shows **Docker** (not Python)
 5. Click **Create Web Service**
-6. Wait 3–5 minutes for the first deploy to finish (it installs Playwright + Chromium)
+6. Wait 5–8 minutes for the first deploy — it builds a Docker image with Chromium pre-installed
 
 ---
 
