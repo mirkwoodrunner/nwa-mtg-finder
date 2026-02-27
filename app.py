@@ -372,8 +372,9 @@ def error_mox(username, card_name, msg):
 
 async def search_moxfield_async(username, card_name):
     """
-    Use stealth Playwright to load Moxfield pages and intercept their API XHRs.
-    Stealth mode hides headless browser signals so Moxfield serves real content.
+    Use stealth Playwright to call Moxfield API directly via page.evaluate().
+    The browser makes the fetch() call from inside the page context, so it
+    carries real browser headers and passes bot detection.
     """
     card_lower = card_name.lower()
 
@@ -388,49 +389,51 @@ async def search_moxfield_async(username, card_name):
             viewport={"width": 1280, "height": 800},
         )
         page = await context.new_page()
-        await stealth_async(page)  # Hide headless fingerprint
+        await stealth_async(page)
 
-        # ── Step 1: Load profile page, intercept the decks XHR ──
-        deck_list = []
-        done = asyncio.Event()
-
-        async def on_response(response):
-            url = response.url
-            if ("moxfield.com" not in url or response.status != 200):
-                return
-            ct = response.headers.get("content-type", "")
-            if "json" not in ct:
-                return
-            # Deck list endpoint: /v2/users/{username}/decks
-            if f"/users/{username}/decks" in url or (f"/{username}" in url and "/decks" in url):
-                try:
-                    data = await response.json()
-                    items = data.get("data", [])
-                    if items and not deck_list:
-                        deck_list.extend(items)
-                        done.set()
-                except Exception:
-                    pass
-
-        page.on("response", on_response)
+        # Navigate to moxfield.com first to establish origin + cookies
         try:
-            await page.goto(f"https://www.moxfield.com/users/{username}",
-                            wait_until="networkidle", timeout=25000)
-            try:
-                await asyncio.wait_for(done.wait(), timeout=8)
-            except asyncio.TimeoutError:
-                pass
+            await page.goto("https://www.moxfield.com", wait_until="domcontentloaded", timeout=20000)
+            await page.wait_for_timeout(1500)
         except Exception:
             pass
-        page.remove_listener("response", on_response)
 
-        if not deck_list:
+        # Use page.evaluate to run fetch() from inside the browser —
+        # same origin, real browser, carries all cookies and headers automatically
+        async def mox_fetch(url):
+            try:
+                result = await page.evaluate(f"""async () => {{
+                    const r = await fetch({json.dumps(url)}, {{
+                        headers: {{
+                            "Accept": "application/json",
+                            "X-Requested-With": "XMLHttpRequest"
+                        }}
+                    }});
+                    if (!r.ok) return {{ _status: r.status }};
+                    return await r.json();
+                }}""")
+                return result
+            except Exception:
+                return None
+
+        # ── Step 1: Fetch deck list ──
+        list_url = (f"https://api.moxfield.com/v2/users/{username}/decks"
+                    f"?pageNumber=1&pageSize=100&sortType=updated&sortDirection=Descending")
+        deck_data = await mox_fetch(list_url)
+
+        if not deck_data or deck_data.get("_status"):
+            status = deck_data.get("_status", 0) if deck_data else 0
             await browser.close()
             return error_mox(username, card_name,
-                f"Could not load decks for '{username}'. "
-                "Check the username is correct and the profile is set to Public on Moxfield.")
+                f"Moxfield returned {status} for '{username}'. "
+                "Ensure the username is correct and the Moxfield profile is set to Public.")
 
-        # ── Step 2: Load each deck page, intercept its cards XHR ──
+        deck_list = deck_data.get("data", [])
+        if not deck_list:
+            await browser.close()
+            return error_mox(username, card_name, f"No public decks found for '{username}'.")
+
+        # ── Step 2: Fetch each deck's card list ──
         found_in = []
         for deck in deck_list:
             public_id = deck.get("publicId") or deck.get("id", "")
@@ -441,42 +444,11 @@ async def search_moxfield_async(username, card_name):
                 "format": deck.get("format", ""),
                 "url":    f"https://www.moxfield.com/decks/{public_id}",
             }
-
-            card_data = {}
-            card_done = asyncio.Event()
-
-            async def on_deck_response(response, pid=public_id, cd=card_data, ev=card_done):
-                if "moxfield.com" not in response.url or response.status != 200:
-                    return
-                if pid not in response.url:
-                    return
-                ct = response.headers.get("content-type", "")
-                if "json" not in ct:
-                    return
-                try:
-                    data = await response.json()
-                    for zone in ["mainboard", "commanders", "sideboard", "maybeboard"]:
-                        if isinstance(data.get(zone), dict) and data[zone]:
-                            cd.update(data)
-                            ev.set()
-                            return
-                except Exception:
-                    pass
-
-            page.on("response", on_deck_response)
-            try:
-                await page.goto(f"https://www.moxfield.com/decks/{public_id}",
-                                wait_until="networkidle", timeout=20000)
-                try:
-                    await asyncio.wait_for(card_done.wait(), timeout=8)
-                except asyncio.TimeoutError:
-                    pass
-            except Exception:
-                pass
-            page.remove_listener("response", on_deck_response)
-
+            detail = await mox_fetch(f"https://api.moxfield.com/v2/decks/all/{public_id}")
+            if not detail or detail.get("_status"):
+                continue
             for zone in ["mainboard", "commanders", "sideboard", "maybeboard", "companion"]:
-                zone_cards = card_data.get(zone, {})
+                zone_cards = detail.get(zone, {})
                 if isinstance(zone_cards, dict):
                     for card_key in zone_cards:
                         if card_lower in card_key.lower():
@@ -485,6 +457,7 @@ async def search_moxfield_async(username, card_name):
                     else:
                         continue
                     break
+            await asyncio.sleep(0.1)
 
         await browser.close()
 
@@ -564,7 +537,7 @@ def api_debug():
 
     out["stealth_available"] = HAS_STEALTH
 
-    # Test 2: Moxfield XHR interception
+    # Test 2: Moxfield via page.evaluate fetch()
     async def test_mox():
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -572,39 +545,38 @@ def api_debug():
                 args=["--no-sandbox","--disable-setuid-sandbox",
                       "--disable-dev-shm-usage","--single-process"],
             )
-            context = await browser.new_context(user_agent=UA)
+            context = await browser.new_context(user_agent=UA, viewport={"width":1280,"height":800})
             page = await context.new_page()
-            intercepted = {}
-            async def on_resp(response):
-                if "moxfield.com" in response.url and "/decks" in response.url and response.status == 200:
-                    ct = response.headers.get("content-type","")
-                    if "json" in ct:
-                        try:
-                            data = await response.json()
-                            items = data.get("data",[])
-                            if items:
-                                intercepted["decks"] = len(items)
-                                intercepted["first"] = items[0].get("name","")
-                                intercepted["url"] = response.url
-                        except Exception as e:
-                            intercepted["parse_error"] = str(e)
-            page.on("response", on_resp)
+            await stealth_async(page)
+            result = {}
             try:
-                await page.goto("https://www.moxfield.com/users/mirkwoodrunner",
-                                wait_until="networkidle", timeout=20000)
-                await page.wait_for_timeout(3000)
+                await page.goto("https://www.moxfield.com", wait_until="domcontentloaded", timeout=20000)
+                await page.wait_for_timeout(1500)
+                data = await page.evaluate("""async () => {
+                    const r = await fetch(
+                        "https://api.moxfield.com/v2/users/mirkwoodrunner/decks?pageNumber=1&pageSize=5",
+                        { headers: { "Accept": "application/json", "X-Requested-With": "XMLHttpRequest" } }
+                    );
+                    if (!r.ok) return { _status: r.status };
+                    return await r.json();
+                }""")
+                if data and not data.get("_status"):
+                    decks = data.get("data", [])
+                    result = {"decks": len(decks), "first": decks[0].get("name","") if decks else "none"}
+                else:
+                    result = {"status": data.get("_status") if data else "null response"}
             except Exception as e:
-                intercepted["nav_error"] = str(e)
+                result = {"error": str(e)}
             await browser.close()
-            return intercepted if intercepted else {"note": "no moxfield XHR intercepted"}
+            return result
 
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        out["moxfield_xhr"] = loop.run_until_complete(test_mox())
+        out["moxfield_evaluate"] = loop.run_until_complete(test_mox())
         loop.close()
     except Exception as e:
-        out["moxfield_xhr"] = {"error": str(e)}
+        out["moxfield_evaluate"] = {"error": str(e)}
 
     return jsonify(out)
 
