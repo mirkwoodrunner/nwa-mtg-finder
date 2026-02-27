@@ -1,9 +1,9 @@
 """
 NWA MTG Local Store Finder — Backend
-Single Playwright browser instance shared across all store searches.
+Single Playwright browser, sequential store searches, generous timeouts.
 """
 
-import os, re, asyncio, traceback
+import os, re, asyncio, traceback, json
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 import requests as req
@@ -13,18 +13,16 @@ from playwright.async_api import async_playwright
 app = Flask(__name__, static_folder="static")
 CORS(app)
 
-# ── Store config ──────────────────────────────────────────────────────────────
-
 SHOPIFY_STORES = [
     {"id": "finalboss", "name": "Final Boss Games",           "url": "https://finalbossgames.com",               "col": "singles"},
     {"id": "gearbv",    "name": "Gear Gaming — Bentonville",  "url": "https://bentonville.geargamingstore.com",  "col": "mtg-singles-all-products"},
     {"id": "gearfv",    "name": "Gear Gaming — Fayetteville", "url": "https://fayetteville.geargamingstore.com", "col": "mtg-singles-all-products"},
 ]
-
 TCG_STORES = [
-    {"id": "chaos", "name": "Chaos Games",      "url": "https://chaosgamesnwa.tcgplayerpro.com"},
-    {"id": "xxplo", "name": "Games Explosion",   "url": "https://gamesexxplosion.tcgplayerpro.com"},
+    {"id": "chaos", "name": "Chaos Games",    "url": "https://chaosgamesnwa.tcgplayerpro.com"},
+    {"id": "xxplo", "name": "Games Explosion","url": "https://gamesexxplosion.tcgplayerpro.com"},
 ]
+ALL_STORES = SHOPIFY_STORES + TCG_STORES
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
@@ -39,7 +37,6 @@ def extract_set(title):
     return m.group(1) if m else ""
 
 def parse_shopify_products(products, base_url, filter_query=None):
-    """Return only in-stock items."""
     if filter_query:
         ql = filter_query.lower()
         products = [p for p in products if ql in (p.get("title") or "").lower()]
@@ -61,20 +58,19 @@ def parse_shopify_products(products, base_url, filter_query=None):
         })
     return results
 
-# ── Single-browser search ─────────────────────────────────────────────────────
+# ── Per-store search functions ────────────────────────────────────────────────
 
-async def search_shopify_page(page, store, query):
-    """Navigate a Playwright page through Shopify JSON endpoints."""
-    q_enc = req.utils.quote(query)
+async def search_shopify(store, query, page):
+    q = req.utils.quote(query)
     endpoints = [
-        (f"{store['url']}/search?q={q_enc}&type=product&view=json", False),
-        (f"{store['url']}/search.json?q={q_enc}&type=product&limit=20", False),
+        (f"{store['url']}/search?q={q}&type=product&view=json", False),
+        (f"{store['url']}/search.json?q={q}&type=product&limit=20", False),
         (f"{store['url']}/collections/{store['col']}/products.json?limit=250", True),
         (f"{store['url']}/collections/all/products.json?limit=250", True),
     ]
     for url, needs_filter in endpoints:
         try:
-            resp = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+            resp = await page.goto(url, wait_until="domcontentloaded", timeout=20000)
             if not resp or not resp.ok:
                 continue
             ct = resp.headers.get("content-type", "")
@@ -85,21 +81,15 @@ async def search_shopify_page(page, store, query):
             parsed = parse_shopify_products(products, store["url"], query if needs_filter else None)
             if parsed:
                 return parsed, None
-        except Exception:
+        except Exception as e:
             continue
     return [], "No results found"
 
 
-async def search_tcg_page(page, store, query):
-    """
-    Navigate to TCGPlayer Pro search page and intercept the internal API response.
-    Uses direct JSON endpoint navigation rather than page.evaluate fetch
-    (avoids CSP issues).
-    """
+async def search_tcgpro(store, query, page):
     search_url = (f"{store['url']}/search/products"
                   f"?productLineName=Magic%3A+The+Gathering"
                   f"&q={req.utils.quote(query)}")
-
     intercepted = []
 
     async def on_response(response):
@@ -109,17 +99,16 @@ async def search_tcg_page(page, store, query):
         if "json" not in ct:
             return
         url = response.url
-        # Capture any JSON response that looks like product data
         if any(k in url for k in ["search", "product", "catalog", "api"]):
             try:
                 data = await response.json()
                 if isinstance(data, list) and data and isinstance(data[0], dict):
-                    intercepted.append(("list", data))
+                    intercepted.append(data)
                 elif isinstance(data, dict):
                     for key in ["results", "products", "items", "data", "cards"]:
                         val = data.get(key)
                         if isinstance(val, list) and val:
-                            intercepted.append(("dict", val))
+                            intercepted.append(val)
                             break
             except Exception:
                 pass
@@ -133,7 +122,7 @@ async def search_tcg_page(page, store, query):
     page.remove_listener("response", on_response)
 
     results = []
-    for _, item_list in intercepted:
+    for item_list in intercepted:
         for item in item_list[:15]:
             if not isinstance(item, dict):
                 continue
@@ -142,11 +131,11 @@ async def search_tcg_page(page, store, query):
             if not name:
                 continue
             price = None
-            for pk in ["marketPrice","lowPrice","price","lowestPrice","minPrice"]:
+            for pk in ["marketPrice", "lowPrice", "price", "lowestPrice", "minPrice"]:
                 v = item.get(pk)
                 if v is not None:
                     try:
-                        price = float(str(v).replace("$","").replace(",",""))
+                        price = float(str(v).replace("$", "").replace(",", ""))
                         break
                     except Exception:
                         pass
@@ -158,7 +147,7 @@ async def search_tcg_page(page, store, query):
             if not available:
                 continue
             slug = item.get("slug") or item.get("handle") or item.get("urlKey") or ""
-            item_url = (f"{store['url']}/product/{slug}" if slug else search_url)
+            item_url = f"{store['url']}/product/{slug}" if slug else search_url
             set_name = (item.get("setName") or item.get("groupName") or
                         item.get("expansion") or extract_set(name))
             results.append({
@@ -168,100 +157,89 @@ async def search_tcg_page(page, store, query):
         if results:
             break
 
-    # DOM fallback if interception got nothing
+    # DOM fallback
     if not results:
         try:
-            items = await page.evaluate("""
-                () => {
-                    const out = [];
-                    const sels = ['[class*="product-card"]','[class*="ProductCard"]',
-                        '[class*="search-result"]','.product','[data-testid*="product"]'];
-                    let cards = [];
-                    for (const s of sels) {
-                        cards = [...document.querySelectorAll(s)];
-                        if (cards.length) break;
-                    }
-                    for (const card of cards.slice(0,12)) {
-                        const text = card.innerText || '';
-                        if (/out.of.stock|sold.out/i.test(text)) continue;
-                        const link = card.querySelector('a[href]');
-                        const pm = text.match(/\\$([0-9]+\\.[0-9]{2})/);
-                        const lines = text.split('\\n').map(s=>s.trim()).filter(Boolean);
-                        if (lines.length) out.push({
-                            name: lines[0], price: pm ? pm[1] : null,
-                            href: link ? link.href : null
-                        });
-                    }
-                    return out;
+            items = await page.evaluate("""() => {
+                const out = [];
+                const sels = ['[class*="product-card"]','[class*="ProductCard"]',
+                    '[class*="search-result"]','.product','[data-testid*="product"]'];
+                let cards = [];
+                for (const s of sels) { cards = [...document.querySelectorAll(s)]; if (cards.length) break; }
+                for (const card of cards.slice(0,12)) {
+                    const text = card.innerText || '';
+                    if (/out.of.stock|sold.out/i.test(text)) continue;
+                    const link = card.querySelector('a[href]');
+                    const pm = text.match(/\\$([0-9]+\\.[0-9]{2})/);
+                    const lines = text.split('\\n').map(s=>s.trim()).filter(Boolean);
+                    if (lines.length) out.push({ name: lines[0], price: pm ? pm[1] : null,
+                        href: link ? link.href : null });
                 }
-            """)
+                return out;
+            }""")
             for item in items:
-                name = item.get("name","").strip()
+                name = item.get("name", "").strip()
                 if len(name) < 2:
                     continue
                 price_str = item.get("price")
                 results.append({
                     "name": name, "set": "",
                     "price": float(price_str) if price_str else None,
-                    "available": True,
-                    "url": item.get("href") or search_url,
+                    "available": True, "url": item.get("href") or search_url,
                 })
         except Exception:
             pass
 
-    if not results:
-        return [], "No results found"
-    return results, None
+    return (results, None) if results else ([], "No results found")
 
 
 async def search_all_stores(query):
-    """
-    Run all 5 store searches sequentially inside a SINGLE Playwright browser.
-    Sequential (not concurrent) keeps memory under Render's 512MB free limit.
-    """
-    results = {}
-    errors  = {}
+    """One browser, one context, one page — reused across all stores sequentially."""
+    store_results = {s["id"]: ([], "Not searched") for s in ALL_STORES}
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
             args=["--no-sandbox", "--disable-setuid-sandbox",
                   "--disable-dev-shm-usage", "--disable-gpu",
-                  "--single-process", "--memory-pressure-off"],
+                  "--single-process"],
         )
         context = await browser.new_context(user_agent=UA)
-
-        # One page reused across all stores
         page = await context.new_page()
 
         for store in SHOPIFY_STORES:
             try:
-                res, err = await search_shopify_page(page, store, query)
-                results[store["id"]] = res
-                errors[store["id"]]  = err
+                res, err = await asyncio.wait_for(
+                    search_shopify(store, query, page), timeout=25
+                )
+                store_results[store["id"]] = (res, err)
+            except asyncio.TimeoutError:
+                store_results[store["id"]] = ([], "Timed out")
             except Exception as e:
-                results[store["id"]] = []
-                errors[store["id"]]  = str(e)
+                store_results[store["id"]] = ([], str(e)[:120])
 
         for store in TCG_STORES:
             try:
-                res, err = await search_tcg_page(page, store, query)
-                results[store["id"]] = res
-                errors[store["id"]]  = err
+                res, err = await asyncio.wait_for(
+                    search_tcgpro(store, query, page), timeout=30
+                )
+                store_results[store["id"]] = (res, err)
+            except asyncio.TimeoutError:
+                store_results[store["id"]] = ([], "Timed out")
             except Exception as e:
-                results[store["id"]] = []
-                errors[store["id"]]  = str(e)
+                store_results[store["id"]] = ([], str(e)[:120])
 
         await browser.close()
 
     output = []
-    for store in SHOPIFY_STORES + TCG_STORES:
+    for store in ALL_STORES:
+        res, err = store_results[store["id"]]
         entry = {
             "id":      store["id"],
             "name":    store["name"],
             "url":     store["url"],
-            "results": results.get(store["id"], []),
-            "error":   errors.get(store["id"]),
+            "results": res,
+            "error":   err if not res else None,
         }
         if store in TCG_STORES:
             entry["search_url"] = (
@@ -280,7 +258,7 @@ async def search_moxfield(username, card_name):
     card_lower = card_name.lower()
     decks = []
 
-    # Try cloudscraper first (no browser needed)
+    # Try cloudscraper first
     try:
         scraper = cloudscraper.create_scraper()
         r = scraper.get(api_url, headers={
@@ -293,35 +271,26 @@ async def search_moxfield(username, card_name):
     except Exception:
         pass
 
-    # Playwright fallback: navigate TO the API URL directly (avoids CSP/fetch issues)
+    # Playwright fallback — navigate directly to the API URL
     if not decks:
         try:
             async with async_playwright() as p:
                 browser = await p.chromium.launch(
                     headless=True,
-                    args=["--no-sandbox","--disable-setuid-sandbox",
-                          "--disable-dev-shm-usage","--single-process"],
+                    args=["--no-sandbox", "--disable-setuid-sandbox",
+                          "--disable-dev-shm-usage", "--single-process"],
                 )
                 context = await browser.new_context(user_agent=UA)
                 page = await context.new_page()
-
-                # Navigate directly to the JSON API endpoint
-                # (browser treats it as a document load, not a fetch — no CSP block)
                 resp = await page.goto(api_url, wait_until="domcontentloaded", timeout=20000)
                 if resp and resp.ok:
                     try:
                         data = await resp.json()
                         decks = data.get("data", [])
                     except Exception:
-                        # If .json() fails, read body text and parse manually
-                        body = await page.content()
-                        # Strip HTML wrapper if present
-                        match = re.search(r'\{.*\}', body, re.DOTALL)
-                        if match:
-                            import json
-                            data = json.loads(match.group())
-                            decks = data.get("data", [])
-
+                        body = await page.inner_text("body")
+                        data = json.loads(body)
+                        decks = data.get("data", [])
                 await browser.close()
         except Exception as e:
             return {
@@ -341,12 +310,8 @@ async def search_moxfield(username, card_name):
 
     found_in, unknown = [], []
     for deck in decks:
-        deck_url  = f"https://www.moxfield.com/decks/{deck.get('publicId', deck.get('id',''))}"
-        deck_info = {
-            "name":   deck.get("name", "Unnamed"),
-            "format": deck.get("format", ""),
-            "url":    deck_url,
-        }
+        deck_url = f"https://www.moxfield.com/decks/{deck.get('publicId', deck.get('id',''))}"
+        deck_info = {"name": deck.get("name","Unnamed"), "format": deck.get("format",""), "url": deck_url}
         found, has_data = False, False
         for zone in ["mainboard","commanders","sideboard","maybeboard","companion"]:
             zc = deck.get(zone, {})
@@ -402,6 +367,40 @@ def api_moxfield():
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+@app.route("/api/debug")
+def api_debug():
+    """Quick smoke test — searches one store only to verify Playwright works."""
+    try:
+        async def test():
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=["--no-sandbox","--disable-setuid-sandbox",
+                          "--disable-dev-shm-usage","--single-process"],
+                )
+                context = await browser.new_context(user_agent=UA)
+                page = await context.new_page()
+                resp = await page.goto(
+                    "https://finalbossgames.com/search?q=lightning+bolt&type=product&view=json",
+                    wait_until="domcontentloaded", timeout=20000
+                )
+                status = resp.status if resp else "no response"
+                ct = resp.headers.get("content-type","") if resp else ""
+                body_preview = ""
+                if resp and resp.ok and "json" in ct:
+                    data = await resp.json()
+                    products = data.get("products") or data.get("results") or []
+                    body_preview = f"{len(products)} products found"
+                await browser.close()
+                return {"status": status, "content_type": ct, "result": body_preview}
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(test())
+        loop.close()
+        return jsonify({"ok": True, **result})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
 
 @app.route("/health")
 def health():

@@ -21,4 +21,4 @@ ENV PORT=5000
 
 EXPOSE $PORT
 
-CMD gunicorn app:app --workers 1 --timeout 90 --bind 0.0.0.0:$PORT
+CMD gunicorn app:app --workers 1 --timeout 180 --bind 0.0.0.0:$PORT
