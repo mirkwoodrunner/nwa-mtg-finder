@@ -66,14 +66,20 @@ def parse_shopify_products(products, base_url, filter_query=None):
 # ── BinderPOS / Shopify — try requests first, Playwright fallback ─────────────
 
 def search_shopify_requests(store, query):
-    """Fast path: plain HTTP requests with cloudscraper."""
+    """
+    Fast path: plain HTTP requests with cloudscraper.
+    BinderPOS supports /products.json?q= for server-side filtering.
+    Falls through to Playwright if no response at all.
+    """
     scraper = cloudscraper.create_scraper()
     q = req.utils.quote(query)
     endpoints = [
-        (f"{store['url']}/search.json?q={q}&type=product&limit=20", False),
+        # Server-side filtered — most efficient
+        (f"{store['url']}/collections/{store['col']}/products.json?q={q}&limit=50", False),
+        (f"{store['url']}/collections/all/products.json?q={q}&limit=50", False),
+        # Full collection dump with client-side filter
         (f"{store['url']}/collections/{store['col']}/products.json?limit=250", True),
         (f"{store['url']}/collections/all/products.json?limit=250", True),
-        (f"{store['url']}/search?q={q}&type=product&view=json", False),
     ]
     got_any_response = False
     for url, needs_filter in endpoints:
@@ -87,13 +93,14 @@ def search_shopify_requests(store, query):
             got_any_response = True
             data = r.json()
             products = data.get("products") or data.get("results") or []
-            parsed = parse_shopify_products(products, store["url"], query if needs_filter else None)
+            # Always client-filter to ensure relevance
+            parsed = parse_shopify_products(products, store["url"], query)
             if parsed is not None:
                 return parsed, None
         except Exception:
             continue
     if got_any_response:
-        return [], None   # responded but 0 results
+        return [], None   # responded but 0 results — not in stock
     return None, "requests failed"  # None = try Playwright
 
 async def search_shopify_playwright(store, query, page):
@@ -322,44 +329,14 @@ def error_mox(username, card_name, msg):
         "search_url":  f"https://www.moxfield.com/search#q={req.utils.quote(card_name)}",
     }
 
-async def _mox_fetch_json(page, url):
-    """Navigate a Playwright page to a JSON API URL and return parsed data."""
-    resp = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
-    if not resp or not resp.ok:
-        return None, resp.status if resp else 0
-    ct = resp.headers.get("content-type", "")
-    if "json" not in ct:
-        # Try reading body text and parsing manually
-        try:
-            body = await page.inner_text("pre") 
-            return json.loads(body), 200
-        except Exception:
-            return None, 0
-    try:
-        data = await resp.json()
-        return data, 200
-    except Exception:
-        try:
-            body = await page.inner_text("body")
-            # Strip any HTML wrapper
-            m = re.search(r'(\{.*\})', body, re.DOTALL)
-            if m:
-                return json.loads(m.group(1)), 200
-        except Exception:
-            pass
-    return None, 0
-
 async def search_moxfield_async(username, card_name):
     """
-    Use Playwright to:
-    1. Load moxfield.com/users/{username} to establish session cookies
-    2. Fetch /v2/users/{username}/decks for the deck list
-    3. Fetch /v2/decks/all/{publicId} for each deck's card list
-    4. Return decks that contain card_name
+    Use Playwright to intercept the XHR requests Moxfield's own page makes.
+    This captures the authenticated API calls with proper tokens automatically.
+    1. Load moxfield.com/users/{username} — intercept the decks XHR
+    2. For each deck load moxfield.com/decks/{id} — intercept the cards XHR
     """
     card_lower = card_name.lower()
-    list_url = (f"https://api.moxfield.com/v2/users/{username}/decks"
-                f"?pageNumber=1&pageSize=100&sortType=updated&sortDirection=Descending")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -367,36 +344,47 @@ async def search_moxfield_async(username, card_name):
             args=["--no-sandbox", "--disable-setuid-sandbox",
                   "--disable-dev-shm-usage", "--single-process"],
         )
-        context = await browser.new_context(
-            user_agent=UA,
-            extra_http_headers={
-                "Accept-Language": "en-US,en;q=0.9",
-                "Referer": "https://www.moxfield.com/",
-            }
-        )
+        context = await browser.new_context(user_agent=UA)
         page = await context.new_page()
 
-        # Step 1: Visit the profile page to get Cloudflare cookies
+        # ── Step 1: Load user profile and intercept the decks API call ──
+        deck_list = []
+        deck_list_event = asyncio.Event()
+
+        async def on_decks_response(response):
+            if ("moxfield.com" in response.url and "/decks" in response.url
+                    and response.status == 200):
+                ct = response.headers.get("content-type", "")
+                if "json" in ct:
+                    try:
+                        data = await response.json()
+                        items = data.get("data", [])
+                        if items:
+                            deck_list.extend(items)
+                            deck_list_event.set()
+                    except Exception:
+                        pass
+
+        page.on("response", on_decks_response)
         try:
             await page.goto(f"https://www.moxfield.com/users/{username}",
                             wait_until="networkidle", timeout=20000)
+            # Give XHRs a moment to complete
+            try:
+                await asyncio.wait_for(deck_list_event.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                pass
         except Exception:
-            pass  # Continue even if profile page times out
+            pass
+        page.remove_listener("response", on_decks_response)
 
-        # Step 2: Fetch deck list
-        deck_data, status = await _mox_fetch_json(page, list_url)
-        if not deck_data or status not in (200, 0):
-            await browser.close()
-            return error_mox(username, card_name,
-                f"Moxfield returned {status} for '{username}'. "
-                "Check the username is correct and decks are set to Public.")
-
-        deck_list = deck_data.get("data", [])
         if not deck_list:
             await browser.close()
-            return error_mox(username, card_name, f"No public decks found for '{username}'.")
+            return error_mox(username, card_name,
+                f"Could not load decks for '{username}'. "
+                "Check the username is correct and profile is public.")
 
-        # Step 3: Check each deck
+        # ── Step 2: For each deck, load the deck page and intercept the cards XHR ──
         found_in = []
         for deck in deck_list:
             public_id = deck.get("publicId") or deck.get("id", "")
@@ -407,26 +395,50 @@ async def search_moxfield_async(username, card_name):
                 "format": deck.get("format", ""),
                 "url":    f"https://www.moxfield.com/decks/{public_id}",
             }
+
+            card_data = {}
+            cards_event = asyncio.Event()
+
+            async def on_cards_response(response):
+                if ("moxfield.com" in response.url
+                        and public_id in response.url
+                        and response.status == 200):
+                    ct = response.headers.get("content-type", "")
+                    if "json" in ct:
+                        try:
+                            data = await response.json()
+                            # Deck detail has mainboard/commanders etc as dicts
+                            for zone in ["mainboard","commanders","sideboard","maybeboard"]:
+                                if isinstance(data.get(zone), dict) and data[zone]:
+                                    card_data.update(data)
+                                    cards_event.set()
+                                    break
+                        except Exception:
+                            pass
+
+            page.on("response", on_cards_response)
             try:
-                detail, _ = await _mox_fetch_json(
-                    page, f"https://api.moxfield.com/v2/decks/all/{public_id}"
-                )
-                if not detail:
-                    continue
-                for zone in ["mainboard", "commanders", "sideboard", "maybeboard", "companion"]:
-                    zone_cards = detail.get(zone, {})
-                    if isinstance(zone_cards, dict):
-                        for card_key in zone_cards:
-                            if card_lower in card_key.lower():
-                                found_in.append(deck_info)
-                                break
-                        else:
-                            continue
-                        break
-                # Small pause to avoid hammering Moxfield
-                await asyncio.sleep(0.1)
+                await page.goto(f"https://www.moxfield.com/decks/{public_id}",
+                                wait_until="networkidle", timeout=20000)
+                try:
+                    await asyncio.wait_for(cards_event.wait(), timeout=5)
+                except asyncio.TimeoutError:
+                    pass
             except Exception:
-                continue
+                pass
+            page.remove_listener("response", on_cards_response)
+
+            # Check if card is in any zone
+            for zone in ["mainboard", "commanders", "sideboard", "maybeboard", "companion"]:
+                zone_cards = card_data.get(zone, {})
+                if isinstance(zone_cards, dict):
+                    for card_key in zone_cards:
+                        if card_lower in card_key.lower():
+                            found_in.append(deck_info)
+                            break
+                    else:
+                        continue
+                    break
 
         await browser.close()
 
@@ -511,7 +523,7 @@ def api_debug():
         except Exception as e:
             out[f"finalboss_{label}"] = {"error": str(e)}
 
-    # Test 2: Moxfield via Playwright (needs cookies)
+    # Test 2: Moxfield XHR interception
     async def test_mox():
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -521,37 +533,37 @@ def api_debug():
             )
             context = await browser.new_context(user_agent=UA)
             page = await context.new_page()
-            # Visit profile first for cookies
+            intercepted = {}
+            async def on_resp(response):
+                if "moxfield.com" in response.url and "/decks" in response.url and response.status == 200:
+                    ct = response.headers.get("content-type","")
+                    if "json" in ct:
+                        try:
+                            data = await response.json()
+                            items = data.get("data",[])
+                            if items:
+                                intercepted["decks"] = len(items)
+                                intercepted["first"] = items[0].get("name","")
+                                intercepted["url"] = response.url
+                        except Exception as e:
+                            intercepted["parse_error"] = str(e)
+            page.on("response", on_resp)
             try:
                 await page.goto("https://www.moxfield.com/users/mirkwoodrunner",
-                                wait_until="networkidle", timeout=15000)
-            except Exception:
-                pass
-            # Now hit the API
-            resp = await page.goto(
-                "https://api.moxfield.com/v2/users/mirkwoodrunner/decks?pageNumber=1&pageSize=5",
-                wait_until="domcontentloaded", timeout=15000)
-            status = resp.status if resp else 0
-            result = {"status": status}
-            if resp and resp.ok:
-                try:
-                    data = await resp.json()
-                    decks = data.get("data", [])
-                    result["decks"] = len(decks)
-                    if decks:
-                        result["first_deck"] = decks[0].get("name","")
-                except Exception as e:
-                    result["parse_error"] = str(e)
+                                wait_until="networkidle", timeout=20000)
+                await page.wait_for_timeout(3000)
+            except Exception as e:
+                intercepted["nav_error"] = str(e)
             await browser.close()
-            return result
+            return intercepted if intercepted else {"note": "no moxfield XHR intercepted"}
 
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        out["moxfield_playwright"] = loop.run_until_complete(test_mox())
+        out["moxfield_xhr"] = loop.run_until_complete(test_mox())
         loop.close()
     except Exception as e:
-        out["moxfield_playwright"] = {"error": str(e)}
+        out["moxfield_xhr"] = {"error": str(e)}
 
     return jsonify(out)
 
