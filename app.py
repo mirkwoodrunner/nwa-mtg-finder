@@ -8,6 +8,12 @@ from flask_cors import CORS
 import requests as req
 import cloudscraper
 from playwright.async_api import async_playwright
+try:
+    from playwright_stealth import stealth_async
+    HAS_STEALTH = True
+except ImportError:
+    HAS_STEALTH = False
+    async def stealth_async(page): pass
 
 app = Flask(__name__, static_folder="static")
 CORS(app)
@@ -65,42 +71,77 @@ def parse_shopify_products(products, base_url, filter_query=None):
 
 # ── BinderPOS / Shopify — try requests first, Playwright fallback ─────────────
 
-def search_shopify_requests(store, query):
+def shopify_fetch_all_products(scraper, base_url, collection):
     """
-    Fast path: plain HTTP requests with cloudscraper.
-    BinderPOS supports /products.json?q= for server-side filtering.
-    Falls through to Playwright if no response at all.
+    Paginate through ALL products in a BinderPOS collection.
+    Returns flat list of all product dicts.
     """
-    scraper = cloudscraper.create_scraper()
-    q = req.utils.quote(query)
-    endpoints = [
-        # Server-side filtered — most efficient
-        (f"{store['url']}/collections/{store['col']}/products.json?q={q}&limit=50", False),
-        (f"{store['url']}/collections/all/products.json?q={q}&limit=50", False),
-        # Full collection dump with client-side filter
-        (f"{store['url']}/collections/{store['col']}/products.json?limit=250", True),
-        (f"{store['url']}/collections/all/products.json?limit=250", True),
-    ]
-    got_any_response = False
-    for url, needs_filter in endpoints:
+    all_products = []
+    page = 1
+    while True:
+        url = f"{base_url}/collections/{collection}/products.json?limit=250&page={page}"
         try:
             r = scraper.get(url, headers=SCRAPER_HEADERS, timeout=12)
             if not r.ok:
-                continue
+                break
             ct = r.headers.get("content-type", "")
             if "json" not in ct:
+                break
+            products = r.json().get("products", [])
+            if not products:
+                break
+            all_products.extend(products)
+            # If fewer than 250 returned, we've hit the last page
+            if len(products) < 250:
+                break
+            page += 1
+            if page > 20:  # safety cap: max 5000 products
+                break
+        except Exception:
+            break
+    return all_products
+
+
+def search_shopify_requests(store, query):
+    """
+    Fast path: plain HTTP requests with cloudscraper.
+    Paginates through the full collection and filters client-side.
+    Falls through to Playwright if no HTTP response at all.
+    """
+    scraper = cloudscraper.create_scraper()
+    got_any_response = False
+
+    for collection in [store["col"], "all"]:
+        try:
+            # Quick probe: fetch page 1 to confirm endpoint works
+            probe_url = f"{store['url']}/collections/{collection}/products.json?limit=250&page=1"
+            r = scraper.get(probe_url, headers=SCRAPER_HEADERS, timeout=12)
+            if not r.ok or "json" not in r.headers.get("content-type", ""):
                 continue
             got_any_response = True
-            data = r.json()
-            products = data.get("products") or data.get("results") or []
-            # Always client-filter to ensure relevance
-            parsed = parse_shopify_products(products, store["url"], query)
-            if parsed is not None:
+            first_page = r.json().get("products", [])
+            if first_page is None:
+                continue
+
+            # Check first page for matches
+            parsed = parse_shopify_products(first_page, store["url"], query)
+            if parsed:
                 return parsed, None
+
+            # If first page had 250 items, there are more — paginate
+            if len(first_page) == 250:
+                rest = shopify_fetch_all_products(scraper, store["url"], collection)
+                all_products = first_page + rest
+                parsed = parse_shopify_products(all_products, store["url"], query)
+                return parsed, None
+
+            # First page had < 250 and no matches — card not in this collection
+            return [], None
         except Exception:
             continue
+
     if got_any_response:
-        return [], None   # responded but 0 results — not in stock
+        return [], None
     return None, "requests failed"  # None = try Playwright
 
 async def search_shopify_playwright(store, query, page):
@@ -331,10 +372,8 @@ def error_mox(username, card_name, msg):
 
 async def search_moxfield_async(username, card_name):
     """
-    Use Playwright to intercept the XHR requests Moxfield's own page makes.
-    This captures the authenticated API calls with proper tokens automatically.
-    1. Load moxfield.com/users/{username} — intercept the decks XHR
-    2. For each deck load moxfield.com/decks/{id} — intercept the cards XHR
+    Use stealth Playwright to load Moxfield pages and intercept their API XHRs.
+    Stealth mode hides headless browser signals so Moxfield serves real content.
     """
     card_lower = card_name.lower()
 
@@ -344,47 +383,54 @@ async def search_moxfield_async(username, card_name):
             args=["--no-sandbox", "--disable-setuid-sandbox",
                   "--disable-dev-shm-usage", "--single-process"],
         )
-        context = await browser.new_context(user_agent=UA)
+        context = await browser.new_context(
+            user_agent=UA,
+            viewport={"width": 1280, "height": 800},
+        )
         page = await context.new_page()
+        await stealth_async(page)  # Hide headless fingerprint
 
-        # ── Step 1: Load user profile and intercept the decks API call ──
+        # ── Step 1: Load profile page, intercept the decks XHR ──
         deck_list = []
-        deck_list_event = asyncio.Event()
+        done = asyncio.Event()
 
-        async def on_decks_response(response):
-            if ("moxfield.com" in response.url and "/decks" in response.url
-                    and response.status == 200):
-                ct = response.headers.get("content-type", "")
-                if "json" in ct:
-                    try:
-                        data = await response.json()
-                        items = data.get("data", [])
-                        if items:
-                            deck_list.extend(items)
-                            deck_list_event.set()
-                    except Exception:
-                        pass
+        async def on_response(response):
+            url = response.url
+            if ("moxfield.com" not in url or response.status != 200):
+                return
+            ct = response.headers.get("content-type", "")
+            if "json" not in ct:
+                return
+            # Deck list endpoint: /v2/users/{username}/decks
+            if f"/users/{username}/decks" in url or (f"/{username}" in url and "/decks" in url):
+                try:
+                    data = await response.json()
+                    items = data.get("data", [])
+                    if items and not deck_list:
+                        deck_list.extend(items)
+                        done.set()
+                except Exception:
+                    pass
 
-        page.on("response", on_decks_response)
+        page.on("response", on_response)
         try:
             await page.goto(f"https://www.moxfield.com/users/{username}",
-                            wait_until="networkidle", timeout=20000)
-            # Give XHRs a moment to complete
+                            wait_until="networkidle", timeout=25000)
             try:
-                await asyncio.wait_for(deck_list_event.wait(), timeout=5)
+                await asyncio.wait_for(done.wait(), timeout=8)
             except asyncio.TimeoutError:
                 pass
         except Exception:
             pass
-        page.remove_listener("response", on_decks_response)
+        page.remove_listener("response", on_response)
 
         if not deck_list:
             await browser.close()
             return error_mox(username, card_name,
                 f"Could not load decks for '{username}'. "
-                "Check the username is correct and profile is public.")
+                "Check the username is correct and the profile is set to Public on Moxfield.")
 
-        # ── Step 2: For each deck, load the deck page and intercept the cards XHR ──
+        # ── Step 2: Load each deck page, intercept its cards XHR ──
         found_in = []
         for deck in deck_list:
             public_id = deck.get("publicId") or deck.get("id", "")
@@ -397,38 +443,38 @@ async def search_moxfield_async(username, card_name):
             }
 
             card_data = {}
-            cards_event = asyncio.Event()
+            card_done = asyncio.Event()
 
-            async def on_cards_response(response):
-                if ("moxfield.com" in response.url
-                        and public_id in response.url
-                        and response.status == 200):
-                    ct = response.headers.get("content-type", "")
-                    if "json" in ct:
-                        try:
-                            data = await response.json()
-                            # Deck detail has mainboard/commanders etc as dicts
-                            for zone in ["mainboard","commanders","sideboard","maybeboard"]:
-                                if isinstance(data.get(zone), dict) and data[zone]:
-                                    card_data.update(data)
-                                    cards_event.set()
-                                    break
-                        except Exception:
-                            pass
+            async def on_deck_response(response, pid=public_id, cd=card_data, ev=card_done):
+                if "moxfield.com" not in response.url or response.status != 200:
+                    return
+                if pid not in response.url:
+                    return
+                ct = response.headers.get("content-type", "")
+                if "json" not in ct:
+                    return
+                try:
+                    data = await response.json()
+                    for zone in ["mainboard", "commanders", "sideboard", "maybeboard"]:
+                        if isinstance(data.get(zone), dict) and data[zone]:
+                            cd.update(data)
+                            ev.set()
+                            return
+                except Exception:
+                    pass
 
-            page.on("response", on_cards_response)
+            page.on("response", on_deck_response)
             try:
                 await page.goto(f"https://www.moxfield.com/decks/{public_id}",
                                 wait_until="networkidle", timeout=20000)
                 try:
-                    await asyncio.wait_for(cards_event.wait(), timeout=5)
+                    await asyncio.wait_for(card_done.wait(), timeout=8)
                 except asyncio.TimeoutError:
                     pass
             except Exception:
                 pass
-            page.remove_listener("response", on_cards_response)
+            page.remove_listener("response", on_deck_response)
 
-            # Check if card is in any zone
             for zone in ["mainboard", "commanders", "sideboard", "maybeboard", "companion"]:
                 zone_cards = card_data.get(zone, {})
                 if isinstance(zone_cards, dict):
@@ -503,25 +549,20 @@ def api_debug():
     """Smoke test — checks Final Boss (cloudscraper) and Moxfield (Playwright)."""
     out = {}
 
-    # Test 1: Final Boss with cloudscraper - try multiple endpoints
+    # Test 1: Final Boss — test full pagination
     scraper = cloudscraper.create_scraper()
-    for path, label in [
-        ("/search.json?q=plains&type=product&limit=5", "search.json"),
-        ("/collections/singles/products.json?limit=5", "collection"),
-    ]:
-        try:
-            r = scraper.get(f"https://finalbossgames.com{path}",
-                            headers=SCRAPER_HEADERS, timeout=12)
-            ct = r.headers.get("content-type", "")
-            if r.ok and "json" in ct:
-                data = r.json()
-                products = data.get("products") or data.get("results") or []
-                out[f"finalboss_{label}"] = {"status": r.status_code, "products": len(products),
-                    "first": products[0].get("title","") if products else "none"}
-            else:
-                out[f"finalboss_{label}"] = {"status": r.status_code, "content_type": ct}
-        except Exception as e:
-            out[f"finalboss_{label}"] = {"error": str(e)}
+    try:
+        all_products = shopify_fetch_all_products(scraper, "https://finalbossgames.com", "singles")
+        parsed = parse_shopify_products(all_products, "https://finalbossgames.com", "plains")
+        out["finalboss_paginated"] = {
+            "total_products": len(all_products),
+            "plains_matches": len(parsed),
+            "first_match": parsed[0]["name"] if parsed else "none",
+        }
+    except Exception as e:
+        out["finalboss_paginated"] = {"error": str(e)}
+
+    out["stealth_available"] = HAS_STEALTH
 
     # Test 2: Moxfield XHR interception
     async def test_mox():
