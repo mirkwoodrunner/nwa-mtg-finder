@@ -71,74 +71,69 @@ def parse_shopify_products(products, base_url, filter_query=None):
 
 # ── BinderPOS / Shopify — try requests first, Playwright fallback ─────────────
 
-def shopify_fetch_all_products(scraper, base_url, collection):
-    """
-    Paginate through ALL products in a BinderPOS collection.
-    Returns flat list of all product dicts.
-    """
-    all_products = []
-    page = 1
-    while True:
-        url = f"{base_url}/collections/{collection}/products.json?limit=250&page={page}"
-        try:
-            r = scraper.get(url, headers=SCRAPER_HEADERS, timeout=12)
-            if not r.ok:
-                break
-            ct = r.headers.get("content-type", "")
-            if "json" not in ct:
-                break
-            products = r.json().get("products", [])
-            if not products:
-                break
-            all_products.extend(products)
-            # If fewer than 250 returned, we've hit the last page
-            if len(products) < 250:
-                break
-            page += 1
-            if page > 20:  # safety cap: max 5000 products
-                break
-        except Exception:
-            break
-    return all_products
-
-
 def search_shopify_requests(store, query):
     """
     Fast path: plain HTTP requests with cloudscraper.
-    Paginates through the full collection and filters client-side.
-    Falls through to Playwright if no HTTP response at all.
+    Strategy:
+      1. Try BinderPOS search endpoint (fast, server-side filtered)
+      2. If that returns nothing useful, paginate collection with early exit
+         the moment we find a match — don't fetch all 5000 products.
+    Falls through to Playwright only if no HTTP response at all.
     """
     scraper = cloudscraper.create_scraper()
+    q = req.utils.quote(query)
     got_any_response = False
 
-    for collection in [store["col"], "all"]:
+    # ── Attempt 1: BinderPOS search endpoint (fast path) ──
+    # These stores run BinderPOS which has a /search endpoint that filters server-side
+    for search_url in [
+        f"{store['url']}/search?q={q}&type=product&view=json",
+        f"{store['url']}/search?q={q}&view=json",
+    ]:
         try:
-            # Quick probe: fetch page 1 to confirm endpoint works
-            probe_url = f"{store['url']}/collections/{collection}/products.json?limit=250&page=1"
-            r = scraper.get(probe_url, headers=SCRAPER_HEADERS, timeout=12)
-            if not r.ok or "json" not in r.headers.get("content-type", ""):
+            r = scraper.get(search_url, headers=SCRAPER_HEADERS, timeout=10)
+            if not r.ok:
+                continue
+            ct = r.headers.get("content-type", "")
+            # Some stores return HTML for view=json — skip those
+            if "json" not in ct and "javascript" not in ct:
                 continue
             got_any_response = True
-            first_page = r.json().get("products", [])
-            if first_page is None:
+            try:
+                data = r.json()
+            except Exception:
                 continue
-
-            # Check first page for matches
-            parsed = parse_shopify_products(first_page, store["url"], query)
-            if parsed:
-                return parsed, None
-
-            # If first page had 250 items, there are more — paginate
-            if len(first_page) == 250:
-                rest = shopify_fetch_all_products(scraper, store["url"], collection)
-                all_products = first_page + rest
-                parsed = parse_shopify_products(all_products, store["url"], query)
-                return parsed, None
-
-            # First page had < 250 and no matches — card not in this collection
-            return [], None
+            products = data.get("products") or data.get("results") or []
+            if isinstance(products, list) and len(products) > 0:
+                parsed = parse_shopify_products(products, store["url"], query)
+                if parsed is not None:
+                    return parsed, None
         except Exception:
             continue
+
+    # ── Attempt 2: Paginate collection with early exit on first match ──
+    for collection in [store["col"], "all"]:
+        page_num = 1
+        while page_num <= 5:  # hard cap: max 5 pages = 1250 products per store
+            url = f"{store['url']}/collections/{collection}/products.json?limit=250&page={page_num}"
+            try:
+                r = scraper.get(url, headers=SCRAPER_HEADERS, timeout=10)
+                if not r.ok or "json" not in r.headers.get("content-type", ""):
+                    break
+                got_any_response = True
+                products = r.json().get("products", [])
+                if not products:
+                    break
+                parsed = parse_shopify_products(products, store["url"], query)
+                if parsed:
+                    return parsed, None  # found a match — stop paginating
+                if len(products) < 250:
+                    break  # last page, no matches in this collection
+                page_num += 1
+            except Exception:
+                break
+        if got_any_response:
+            return [], None  # exhausted collection, card not found
 
     if got_any_response:
         return [], None
@@ -401,18 +396,17 @@ def api_debug():
     """Smoke test — checks Final Boss (cloudscraper) and Moxfield (Playwright)."""
     out = {}
 
-    # Test 1: Final Boss — test full pagination
-    scraper = cloudscraper.create_scraper()
+    # Test 1: Final Boss — test search + paginated collection
     try:
-        all_products = shopify_fetch_all_products(scraper, "https://finalbossgames.com", "singles")
-        parsed = parse_shopify_products(all_products, "https://finalbossgames.com", "plains")
-        out["finalboss_paginated"] = {
-            "total_products": len(all_products),
-            "plains_matches": len(parsed),
-            "first_match": parsed[0]["name"] if parsed else "none",
+        fb_store = {"url": "https://finalbossgames.com", "col": "singles"}
+        results, err = search_shopify_requests(fb_store, "plains")
+        out["finalboss_search"] = {
+            "matches": len(results) if results else 0,
+            "error": err,
+            "first": results[0]["name"] if results else "none",
         }
     except Exception as e:
-        out["finalboss_paginated"] = {"error": str(e)}
+        out["finalboss_search"] = {"error": str(e)}
 
     out["stealth_available"] = HAS_STEALTH
 
