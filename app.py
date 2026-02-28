@@ -370,11 +370,31 @@ def error_mox(username, card_name, msg):
         "search_url":  f"https://www.moxfield.com/search#q={req.utils.quote(card_name)}",
     }
 
+async def mox_get(page, url):
+    """
+    Navigate a stealth browser page directly to a Moxfield API URL.
+    No CSP, no origin restrictions — just a browser GETting a JSON endpoint.
+    """
+    try:
+        resp = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+        if not resp:
+            return None, 0
+        if not resp.ok:
+            return None, resp.status
+        # The response body is raw JSON rendered as text in the browser
+        body = await page.evaluate("() => document.body.innerText")
+        data = json.loads(body)
+        return data, resp.status
+    except Exception:
+        return None, 0
+
+
 async def search_moxfield_async(username, card_name):
     """
-    Use stealth Playwright to call Moxfield API directly via page.evaluate().
-    The browser makes the fetch() call from inside the page context, so it
-    carries real browser headers and passes bot detection.
+    Navigate a stealth browser directly to api.moxfield.com endpoints.
+    No page.evaluate, no fetch() — just page.goto() to JSON URLs.
+    Works because: stealth hides headless, and navigating directly to the
+    API avoids CSP entirely (CSP only applies within a page context).
     """
     card_lower = card_name.lower()
 
@@ -387,53 +407,41 @@ async def search_moxfield_async(username, card_name):
         context = await browser.new_context(
             user_agent=UA,
             viewport={"width": 1280, "height": 800},
+            extra_http_headers={
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": "https://www.moxfield.com/",
+                "Origin": "https://www.moxfield.com",
+            }
         )
         page = await context.new_page()
         await stealth_async(page)
 
-        # Navigate to moxfield.com first to establish origin + cookies
+        # Warm up: visit moxfield.com to get any cookies/session tokens
         try:
-            await page.goto("https://www.moxfield.com", wait_until="domcontentloaded", timeout=20000)
-            await page.wait_for_timeout(1500)
+            await page.goto("https://www.moxfield.com", wait_until="domcontentloaded", timeout=15000)
+            await page.wait_for_timeout(800)
         except Exception:
             pass
-
-        # Use page.evaluate to run fetch() from inside the browser —
-        # same origin, real browser, carries all cookies and headers automatically
-        async def mox_fetch(url):
-            try:
-                result = await page.evaluate(f"""async () => {{
-                    const r = await fetch({json.dumps(url)}, {{
-                        headers: {{
-                            "Accept": "application/json",
-                            "X-Requested-With": "XMLHttpRequest"
-                        }}
-                    }});
-                    if (!r.ok) return {{ _status: r.status }};
-                    return await r.json();
-                }}""")
-                return result
-            except Exception:
-                return None
 
         # ── Step 1: Fetch deck list ──
         list_url = (f"https://api.moxfield.com/v2/users/{username}/decks"
                     f"?pageNumber=1&pageSize=100&sortType=updated&sortDirection=Descending")
-        deck_data = await mox_fetch(list_url)
+        deck_data, status = await mox_get(page, list_url)
 
-        if not deck_data or deck_data.get("_status"):
-            status = deck_data.get("_status", 0) if deck_data else 0
+        if not deck_data:
             await browser.close()
             return error_mox(username, card_name,
-                f"Moxfield returned {status} for '{username}'. "
-                "Ensure the username is correct and the Moxfield profile is set to Public.")
+                f"Moxfield returned HTTP {status} for '{username}'. "
+                "Check the username is correct and the profile is Public.")
 
         deck_list = deck_data.get("data", [])
         if not deck_list:
             await browser.close()
-            return error_mox(username, card_name, f"No public decks found for '{username}'.")
+            return error_mox(username, card_name,
+                f"No public decks found for '{username}'.")
 
-        # ── Step 2: Fetch each deck's card list ──
+        # ── Step 2: Check each deck ──
         found_in = []
         for deck in deck_list:
             public_id = deck.get("publicId") or deck.get("id", "")
@@ -444,8 +452,10 @@ async def search_moxfield_async(username, card_name):
                 "format": deck.get("format", ""),
                 "url":    f"https://www.moxfield.com/decks/{public_id}",
             }
-            detail = await mox_fetch(f"https://api.moxfield.com/v2/decks/all/{public_id}")
-            if not detail or detail.get("_status"):
+            detail, _ = await mox_get(
+                page, f"https://api.moxfield.com/v2/decks/all/{public_id}"
+            )
+            if not detail:
                 continue
             for zone in ["mainboard", "commanders", "sideboard", "maybeboard", "companion"]:
                 zone_cards = detail.get(zone, {})
@@ -537,7 +547,7 @@ def api_debug():
 
     out["stealth_available"] = HAS_STEALTH
 
-    # Test 2: Moxfield via page.evaluate fetch()
+    # Test 2: Moxfield via direct stealth page.goto to API URL
     async def test_mox():
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -545,26 +555,31 @@ def api_debug():
                 args=["--no-sandbox","--disable-setuid-sandbox",
                       "--disable-dev-shm-usage","--single-process"],
             )
-            context = await browser.new_context(user_agent=UA, viewport={"width":1280,"height":800})
+            context = await browser.new_context(
+                user_agent=UA, viewport={"width":1280,"height":800},
+                extra_http_headers={
+                    "Accept": "application/json, text/plain, */*",
+                    "Referer": "https://www.moxfield.com/",
+                    "Origin": "https://www.moxfield.com",
+                }
+            )
             page = await context.new_page()
             await stealth_async(page)
             result = {}
             try:
-                await page.goto("https://www.moxfield.com", wait_until="domcontentloaded", timeout=20000)
-                await page.wait_for_timeout(1500)
-                data = await page.evaluate("""async () => {
-                    const r = await fetch(
-                        "https://api.moxfield.com/v2/users/mirkwoodrunner/decks?pageNumber=1&pageSize=5",
-                        { headers: { "Accept": "application/json", "X-Requested-With": "XMLHttpRequest" } }
-                    );
-                    if (!r.ok) return { _status: r.status };
-                    return await r.json();
-                }""")
-                if data and not data.get("_status"):
+                await page.goto("https://www.moxfield.com", wait_until="domcontentloaded", timeout=15000)
+                await page.wait_for_timeout(800)
+                url = "https://api.moxfield.com/v2/users/mirkwoodrunner/decks?pageNumber=1&pageSize=5"
+                resp = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                status = resp.status if resp else 0
+                if resp and resp.ok:
+                    body = await page.evaluate("() => document.body.innerText")
+                    data = json.loads(body)
                     decks = data.get("data", [])
-                    result = {"decks": len(decks), "first": decks[0].get("name","") if decks else "none"}
+                    result = {"status": status, "decks": len(decks),
+                              "first": decks[0].get("name","") if decks else "none"}
                 else:
-                    result = {"status": data.get("_status") if data else "null response"}
+                    result = {"status": status, "error": "not ok"}
             except Exception as e:
                 result = {"error": str(e)}
             await browser.close()
@@ -573,10 +588,10 @@ def api_debug():
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        out["moxfield_evaluate"] = loop.run_until_complete(test_mox())
+        out["moxfield_direct"] = loop.run_until_complete(test_mox())
         loop.close()
     except Exception as e:
-        out["moxfield_evaluate"] = {"error": str(e)}
+        out["moxfield_direct"] = {"error": str(e)}
 
     return jsonify(out)
 
