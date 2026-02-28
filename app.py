@@ -370,114 +370,68 @@ def error_mox(username, card_name, msg):
         "search_url":  f"https://www.moxfield.com/search#q={req.utils.quote(card_name)}",
     }
 
-async def mox_get(page, url):
-    """
-    Navigate a stealth browser page directly to a Moxfield API URL.
-    No CSP, no origin restrictions — just a browser GETting a JSON endpoint.
-    """
-    try:
-        resp = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
-        if not resp:
-            return None, 0
-        if not resp.ok:
-            return None, resp.status
-        # The response body is raw JSON rendered as text in the browser
-        body = await page.evaluate("() => document.body.innerText")
-        data = json.loads(body)
-        return data, resp.status
-    except Exception:
-        return None, 0
-
-
 async def search_moxfield_async(username, card_name):
     """
-    Navigate a stealth browser directly to api.moxfield.com endpoints.
-    No page.evaluate, no fetch() — just page.goto() to JSON URLs.
-    Works because: stealth hides headless, and navigating directly to the
-    API avoids CSP entirely (CSP only applies within a page context).
+    Use Moxfield's public deck search to find decks by a specific user containing a card.
+    Endpoint: /v2/decks/search?q=<card>&authorUsernames=<user>
+    This is the same endpoint the Moxfield search page uses — no auth required.
     """
-    card_lower = card_name.lower()
+    scraper = cloudscraper.create_scraper(
+        browser={"browser": "chrome", "platform": "darwin", "mobile": False}
+    )
+    scraper.headers.update({
+        "Accept": "application/json",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.moxfield.com/",
+        "Origin": "https://www.moxfield.com",
+    })
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox",
-                  "--disable-dev-shm-usage", "--single-process"],
-        )
-        context = await browser.new_context(
-            user_agent=UA,
-            viewport={"width": 1280, "height": 800},
-            extra_http_headers={
-                "Accept": "application/json, text/plain, */*",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Referer": "https://www.moxfield.com/",
-                "Origin": "https://www.moxfield.com",
-            }
-        )
-        page = await context.new_page()
-        await stealth_async(page)
+    found_in = []
+    total_decks = 0
 
-        # Warm up: visit moxfield.com to get any cookies/session tokens
-        try:
-            await page.goto("https://www.moxfield.com", wait_until="domcontentloaded", timeout=15000)
-            await page.wait_for_timeout(800)
-        except Exception:
-            pass
+    # Search for decks by this user containing this card name
+    # Moxfield search supports authorUsernames filter and card name query
+    search_url = (
+        f"https://api.moxfield.com/v2/decks/search"
+        f"?pageNumber=1&pageSize=100"
+        f"&q={req.utils.quote(card_name)}"
+        f"&authorUsernames={req.utils.quote(username)}"
+        f"&sortType=updated&sortDirection=Descending"
+    )
 
-        # ── Step 1: Fetch deck list ──
-        list_url = (f"https://api.moxfield.com/v2/users/{username}/decks"
-                    f"?pageNumber=1&pageSize=100&sortType=updated&sortDirection=Descending")
-        deck_data, status = await mox_get(page, list_url)
-
-        if not deck_data:
-            await browser.close()
+    try:
+        r = scraper.get(search_url, timeout=15)
+        if r.ok:
+            data = r.json()
+            results = data.get("data", [])
+            total_decks = data.get("totalResults", len(results))
+            for deck in results:
+                public_id = deck.get("publicId") or deck.get("id", "")
+                found_in.append({
+                    "name":   deck.get("name", "Unnamed"),
+                    "format": deck.get("format", ""),
+                    "url":    f"https://www.moxfield.com/decks/{public_id}",
+                })
+        else:
+            # Fallback: try fetching user's deck list page (public HTML) and
+            # link to Moxfield search for the card
             return error_mox(username, card_name,
-                f"Moxfield returned HTTP {status} for '{username}'. "
-                "Check the username is correct and the profile is Public.")
-
-        deck_list = deck_data.get("data", [])
-        if not deck_list:
-            await browser.close()
-            return error_mox(username, card_name,
-                f"No public decks found for '{username}'.")
-
-        # ── Step 2: Check each deck ──
-        found_in = []
-        for deck in deck_list:
-            public_id = deck.get("publicId") or deck.get("id", "")
-            if not public_id:
-                continue
-            deck_info = {
-                "name":   deck.get("name", "Unnamed"),
-                "format": deck.get("format", ""),
-                "url":    f"https://www.moxfield.com/decks/{public_id}",
-            }
-            detail, _ = await mox_get(
-                page, f"https://api.moxfield.com/v2/decks/all/{public_id}"
-            )
-            if not detail:
-                continue
-            for zone in ["mainboard", "commanders", "sideboard", "maybeboard", "companion"]:
-                zone_cards = detail.get(zone, {})
-                if isinstance(zone_cards, dict):
-                    for card_key in zone_cards:
-                        if card_lower in card_key.lower():
-                            found_in.append(deck_info)
-                            break
-                    else:
-                        continue
-                    break
-            await asyncio.sleep(0.1)
-
-        await browser.close()
+                f"Moxfield search returned {r.status_code}. "
+                "The Moxfield deck search may be temporarily unavailable.")
+    except Exception as e:
+        return error_mox(username, card_name, f"Could not reach Moxfield: {e}")
 
     return {
         "username":    username,
         "found_in":    found_in,
         "unknown":     [],
-        "total_decks": len(deck_list),
+        "total_decks": total_decks,
         "profile_url": f"https://www.moxfield.com/users/{username}",
-        "search_url":  f"https://www.moxfield.com/search#q={req.utils.quote(card_name)}",
+        "search_url":  (
+            f"https://www.moxfield.com/search"
+            f"#q={req.utils.quote(card_name)}"
+            f"&authorUsernames={req.utils.quote(username)}"
+        ),
     }
 
 def search_moxfield(username, card_name):
@@ -547,51 +501,35 @@ def api_debug():
 
     out["stealth_available"] = HAS_STEALTH
 
-    # Test 2: Moxfield via direct stealth page.goto to API URL
-    async def test_mox():
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox","--disable-setuid-sandbox",
-                      "--disable-dev-shm-usage","--single-process"],
-            )
-            context = await browser.new_context(
-                user_agent=UA, viewport={"width":1280,"height":800},
-                extra_http_headers={
-                    "Accept": "application/json, text/plain, */*",
-                    "Referer": "https://www.moxfield.com/",
-                    "Origin": "https://www.moxfield.com",
-                }
-            )
-            page = await context.new_page()
-            await stealth_async(page)
-            result = {}
-            try:
-                await page.goto("https://www.moxfield.com", wait_until="domcontentloaded", timeout=15000)
-                await page.wait_for_timeout(800)
-                url = "https://api.moxfield.com/v2/users/mirkwoodrunner/decks?pageNumber=1&pageSize=5"
-                resp = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
-                status = resp.status if resp else 0
-                if resp and resp.ok:
-                    body = await page.evaluate("() => document.body.innerText")
-                    data = json.loads(body)
-                    decks = data.get("data", [])
-                    result = {"status": status, "decks": len(decks),
-                              "first": decks[0].get("name","") if decks else "none"}
-                else:
-                    result = {"status": status, "error": "not ok"}
-            except Exception as e:
-                result = {"error": str(e)}
-            await browser.close()
-            return result
-
+    # Test 2: Moxfield public search API (no auth needed)
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        out["moxfield_direct"] = loop.run_until_complete(test_mox())
-        loop.close()
+        scraper2 = cloudscraper.create_scraper(
+            browser={"browser": "chrome", "platform": "darwin", "mobile": False}
+        )
+        scraper2.headers.update({
+            "Accept": "application/json",
+            "Referer": "https://www.moxfield.com/",
+            "Origin": "https://www.moxfield.com",
+        })
+        # Search for Plains in mirkwoodrunner's decks
+        r2 = scraper2.get(
+            "https://api.moxfield.com/v2/decks/search"
+            "?pageNumber=1&pageSize=5&q=Plains&authorUsernames=mirkwoodrunner",
+            timeout=15
+        )
+        if r2.ok:
+            data2 = r2.json()
+            results = data2.get("data", [])
+            out["moxfield_search"] = {
+                "status": r2.status_code,
+                "total": data2.get("totalResults", len(results)),
+                "decks": len(results),
+                "first": results[0].get("name","") if results else "none",
+            }
+        else:
+            out["moxfield_search"] = {"status": r2.status_code, "error": "not ok"}
     except Exception as e:
-        out["moxfield_direct"] = {"error": str(e)}
+        out["moxfield_search"] = {"error": str(e)}
 
     return jsonify(out)
 
