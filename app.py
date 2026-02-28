@@ -69,101 +69,57 @@ def parse_shopify_products(products, base_url, filter_query=None):
         })
     return results
 
-# ── BinderPOS / Shopify — try requests first, Playwright fallback ─────────────
+# ── BinderPOS / Shopify ───────────────────────────────────────────────────────
 
-def search_shopify_requests(store, query):
+async def search_shopify(store, query):
     """
-    Fast path: plain HTTP requests with cloudscraper.
-    Strategy:
-      1. Try BinderPOS search endpoint (fast, server-side filtered)
-      2. If that returns nothing useful, paginate collection with early exit
-         the moment we find a match — don't fetch all 5000 products.
-    Falls through to Playwright only if no HTTP response at all.
+    Search a BinderPOS/Shopify store using async requests (aiohttp-style via
+    asyncio executor so we can run all stores in parallel).
+    Strategy: search endpoint first (1 request), then paginate with early exit.
     """
+    loop = asyncio.get_event_loop()
     scraper = cloudscraper.create_scraper()
     q = req.utils.quote(query)
-    got_any_response = False
 
-    # ── Attempt 1: BinderPOS search endpoint (fast path) ──
-    # These stores run BinderPOS which has a /search endpoint that filters server-side
-    for search_url in [
-        f"{store['url']}/search?q={q}&type=product&view=json",
-        f"{store['url']}/search?q={q}&view=json",
-    ]:
+    def _fetch(url):
         try:
-            r = scraper.get(search_url, headers=SCRAPER_HEADERS, timeout=10)
-            if not r.ok:
-                continue
-            ct = r.headers.get("content-type", "")
-            # Some stores return HTML for view=json — skip those
-            if "json" not in ct and "javascript" not in ct:
-                continue
-            got_any_response = True
-            try:
-                data = r.json()
-            except Exception:
-                continue
+            r = scraper.get(url, headers=SCRAPER_HEADERS, timeout=10)
+            if not r.ok: return None
+            if "json" not in r.headers.get("content-type","").lower(): return None
+            return r.json()
+        except Exception:
+            return None
+
+    # 1. Search endpoint — single request, server-filtered
+    for path in [f"/search?q={q}&type=product&view=json", f"/search?q={q}&view=json"]:
+        data = await loop.run_in_executor(None, _fetch, store["url"] + path)
+        if data:
             products = data.get("products") or data.get("results") or []
-            if isinstance(products, list) and len(products) > 0:
+            if isinstance(products, list):
                 parsed = parse_shopify_products(products, store["url"], query)
                 if parsed is not None:
                     return parsed, None
-        except Exception:
-            continue
 
-    # ── Attempt 2: Paginate collection with early exit on first match ──
+    # 2. Paginate collection — exit as soon as match found, cap at 3 pages
     for collection in [store["col"], "all"]:
-        page_num = 1
-        while page_num <= 5:  # hard cap: max 5 pages = 1250 products per store
+        for page_num in range(1, 4):
             url = f"{store['url']}/collections/{collection}/products.json?limit=250&page={page_num}"
-            try:
-                r = scraper.get(url, headers=SCRAPER_HEADERS, timeout=10)
-                if not r.ok or "json" not in r.headers.get("content-type", ""):
-                    break
-                got_any_response = True
-                products = r.json().get("products", [])
-                if not products:
-                    break
-                parsed = parse_shopify_products(products, store["url"], query)
-                if parsed:
-                    return parsed, None  # found a match — stop paginating
-                if len(products) < 250:
-                    break  # last page, no matches in this collection
-                page_num += 1
-            except Exception:
+            data = await loop.run_in_executor(None, _fetch, url)
+            if not data:
                 break
-        if got_any_response:
-            return [], None  # exhausted collection, card not found
-
-    if got_any_response:
-        return [], None
-    return None, "requests failed"  # None = try Playwright
-
-async def search_shopify_playwright(store, query, page):
-    """Playwright fallback for stores that block plain requests."""
-    q = req.utils.quote(query)
-    endpoints = [
-        (f"{store['url']}/search?q={q}&type=product&view=json", False),
-        (f"{store['url']}/search.json?q={q}&type=product&limit=20", False),
-        (f"{store['url']}/collections/{store['col']}/products.json?limit=250", True),
-        (f"{store['url']}/collections/all/products.json?limit=250", True),
-    ]
-    for url, needs_filter in endpoints:
-        try:
-            resp = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
-            if not resp or not resp.ok:
-                continue
-            ct = resp.headers.get("content-type", "")
-            if "json" not in ct:
-                continue
-            data = await resp.json()
-            products = data.get("products") or data.get("results") or []
-            parsed = parse_shopify_products(products, store["url"], query if needs_filter else None)
-            if parsed is not None:
+            products = data.get("products", [])
+            if not products:
+                break
+            parsed = parse_shopify_products(products, store["url"], query)
+            if parsed:
                 return parsed, None
-        except Exception:
+            if len(products) < 250:
+                return [], None  # last page, no match
+        else:
             continue
-    return [], "No results found"
+        break
+
+    return [], None
 
 # ── TCGPlayer Pro — intercept internal API calls ──────────────────────────────
 
@@ -292,59 +248,49 @@ async def search_tcgpro(store, query, page):
         return [], "No results found"
     return results, None
 
-# ── Run all store searches ────────────────────────────────────────────────────
+# ── Run all store searches in parallel ───────────────────────────────────────
 
-async def search_all_stores(query):
-    store_results = {}
-
-    # ── Step 1: Try all Shopify stores with plain requests (fast, no browser) ──
-    shopify_needs_playwright = []
-    for store in SHOPIFY_STORES:
-        try:
-            res, err = search_shopify_requests(store, query)
-            if res is None:
-                # requests path failed entirely — queue for Playwright
-                shopify_needs_playwright.append(store)
-                store_results[store["id"]] = ([], "queued")
-            else:
-                store_results[store["id"]] = (res, err if not res else None)
-        except Exception as e:
-            shopify_needs_playwright.append(store)
-            store_results[store["id"]] = ([], "queued")
-
-    # ── Step 2: Playwright for TCG stores + any Shopify stores that failed ──
-    needs_playwright = shopify_needs_playwright + TCG_STORES
-    if needs_playwright:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox",
-                      "--disable-dev-shm-usage", "--disable-gpu", "--single-process"],
-            )
+async def search_store(store, query, browser):
+    """Search one store — Shopify via async requests, TCG via Playwright page."""
+    try:
+        if store in SHOPIFY_STORES:
+            return await asyncio.wait_for(search_shopify(store, query), timeout=20)
+        else:
             context = await browser.new_context(user_agent=UA)
             page = await context.new_page()
+            try:
+                return await asyncio.wait_for(search_tcgpro(store, query, page), timeout=25)
+            finally:
+                await page.close()
+                await context.close()
+    except asyncio.TimeoutError:
+        return [], "Timed out"
+    except Exception as e:
+        return [], str(e)[:120]
 
-            for store in needs_playwright:
-                try:
-                    if store in SHOPIFY_STORES:
-                        fn = search_shopify_playwright(store, query, page)
-                    else:
-                        fn = search_tcgpro(store, query, page)
-                    res, err = await asyncio.wait_for(fn, timeout=28)
-                    store_results[store["id"]] = (res, err if not res else None)
-                except asyncio.TimeoutError:
-                    store_results[store["id"]] = ([], "Timed out")
-                except Exception as e:
-                    store_results[store["id"]] = ([], str(e)[:120])
 
-            await browser.close()
+async def search_all_stores(query):
+    """
+    Run all 5 store searches concurrently.
+    Shopify stores use async HTTP (no browser needed).
+    TCG stores use Playwright pages — each gets its own page but shares one browser.
+    Total wall time = slowest single store, not sum of all stores.
+    """
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox",
+                  "--disable-dev-shm-usage", "--disable-gpu", "--single-process"],
+        )
+        tasks = [search_store(store, query, browser) for store in ALL_STORES]
+        results = await asyncio.gather(*tasks)
+        await browser.close()
 
     output = []
-    for store in ALL_STORES:
-        res, err = store_results.get(store["id"], ([], "Not searched"))
+    for store, (res, err) in zip(ALL_STORES, results):
         entry = {
             "id": store["id"], "name": store["name"], "url": store["url"],
-            "results": res, "error": err,
+            "results": res or [], "error": err if not res else None,
         }
         if store in TCG_STORES:
             entry["search_url"] = (
