@@ -609,51 +609,29 @@ async function shareCard() {
 function renderMoxPanel(data) {
   const panel = document.getElementById('moxPanel');
   if (!data) { panel.style.display = 'none'; return; }
-  const {username, found_in=[], unknown=[], total_decks=0, error, profile_url, search_url} = data;
-
-  let body = '';
-  if (error && !found_in.length && !unknown.length) {
-    body = `<div class="state-msg">${error}<br>
-      <a href="${search_url}" target="_blank" style="color:var(--blue);font-style:normal">Search Moxfield →</a></div>`;
-  } else if (!found_in.length && !unknown.length) {
-    body = `<div class="state-msg">Card not found in any of ${total_decks} public deck${total_decks!==1?'s':''}.</div>`;
-  } else {
-    const rows = [...found_in.map(d=>({...d,confirmed:true})), ...unknown.map(d=>({...d,confirmed:false}))];
-    body = rows.map(d => `<a class="mox-deck-row" href="${d.url}" target="_blank">
-      <div><div class="mox-deck-name">${d.name}</div>
-        <div class="mox-deck-fmt">${d.format||''}</div></div>
-      <span class="mox-deck-badge ${d.confirmed?'mox-in':'mox-unknown'}">
-        ${d.confirmed?'Contains card':'Check deck'}</span>
-    </a>`).join('');
-  }
-
-  const summary = found_in.length
-    ? `In ${found_in.length} of ${total_decks} deck${total_decks!==1?'s':''}`
-    : `${total_decks} deck${total_decks!==1?'s':''} checked`;
-
+  const {username, profile_url, search_url} = data;
   panel.innerHTML = `
-    <div class="mox-head">
-      <span class="mox-title">📚 ${username}'s Decks</span>
-      <span class="badge ${found_in.length?'b-live':'b-spin'}">${summary}</span>
-    </div>
-    <div class="mox-body">${body}</div>
-    <div class="mox-foot">
-      <a href="${profile_url||'https://moxfield.com'}" target="_blank">View profile →</a>
-      <a href="${search_url}" target="_blank">All Moxfield results →</a>
+    <div class="mox-head"><span class="mox-title">📚 ${username}'s Decks</span></div>
+    <div class="mox-body">
+      <div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">
+        <div style="font-size:.85rem;color:var(--text)">Search your Moxfield decks for this card:</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <a href="${search_url}" target="_blank" style="display:inline-flex;align-items:center;
+            gap:6px;background:var(--gold);color:#fff;font-family:'Cinzel',serif;font-size:.6rem;
+            letter-spacing:1.2px;text-transform:uppercase;padding:8px 14px;border-radius:3px;
+            text-decoration:none">🔍 Search ${username}'s decks →</a>
+          <a href="${profile_url}" target="_blank" style="display:inline-flex;align-items:center;
+            gap:6px;border:1px solid var(--gold-dim);color:var(--gold);font-family:'Cinzel',serif;
+            font-size:.6rem;letter-spacing:1.2px;text-transform:uppercase;padding:8px 14px;
+            border-radius:3px;text-decoration:none">View Profile →</a>
+        </div>
+        <div style="font-size:.72rem;color:var(--text-dim);font-style:italic">
+          Opens Moxfield filtered to your decks containing this card</div>
+      </div>
     </div>`;
   panel.style.display = 'block';
 }
 
-function showMoxLoading(username) {
-  const panel = document.getElementById('moxPanel');
-  panel.innerHTML = `
-    <div class="mox-head">
-      <span class="mox-title">📚 ${username}'s Decks</span>
-      <span class="badge b-spin">Searching…</span>
-    </div>
-    <div class="mox-body"><div class="state-msg"><div class="spinner"></div>Checking your decks…</div></div>`;
-  panel.style.display = 'block';
-}
 
 // ═══════════════════════════════════════════════════════════
 // STORE CARDS
@@ -730,76 +708,18 @@ function initUI() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// MOXFIELD — called directly from browser (bypasses Cloudflare IP block)
+// MOXFIELD — deep-link only (Moxfield blocks all cross-origin requests via CORS)
 // ═══════════════════════════════════════════════════════════
 async function searchMoxfield(username, cardName) {
-  const cardLower = cardName.toLowerCase();
-  const profileUrl = `https://www.moxfield.com/users/${username}`;
-  const searchUrl = `https://www.moxfield.com/search#q=${encodeURIComponent(cardName)}&authorUsernames=${encodeURIComponent(username)}`;
-
-  const headers = {
-    "Accept": "application/json",
-    "X-Requested-With": "XMLHttpRequest",
-  };
-
-  // Step 1: fetch user deck list
-  let deckList = [];
-  try {
-    const listUrl = `https://api.moxfield.com/v2/users/${username}/decks`
-      + `?pageNumber=1&pageSize=100&sortType=updated&sortDirection=Descending`;
-    const r = await fetch(listUrl, { headers });
-    if (!r.ok) return { username, found_in:[], unknown:[], total_decks:0,
-      error: `Moxfield returned ${r.status} for "${username}". Check the username and that the profile is Public.`,
-      profile_url: profileUrl, search_url: searchUrl };
-    const data = await r.json();
-    deckList = data.data || [];
-  } catch(e) {
-    return { username, found_in:[], unknown:[], total_decks:0,
-      error: `Could not reach Moxfield: ${e.message}`,
-      profile_url: profileUrl, search_url: searchUrl };
-  }
-
-  if (!deckList.length) {
-    return { username, found_in:[], unknown:[], total_decks:0,
-      error: `No public decks found for "${username}".`,
-      profile_url: profileUrl, search_url: searchUrl };
-  }
-
-  // Step 2: fetch each deck's card list and check for the card
-  const found_in = [];
-  for (const deck of deckList) {
-    const publicId = deck.publicId || deck.id || '';
-    if (!publicId) continue;
-    const deckInfo = {
-      name: deck.name || 'Unnamed',
-      format: deck.format || '',
-      url: `https://www.moxfield.com/decks/${publicId}`,
-    };
-    try {
-      const dr = await fetch(`https://api.moxfield.com/v2/decks/all/${publicId}`, { headers });
-      if (!dr.ok) continue;
-      const detail = await dr.json();
-      let found = false;
-      for (const zone of ['mainboard','commanders','sideboard','maybeboard','companion']) {
-        const cards = detail[zone];
-        if (cards && typeof cards === 'object') {
-          for (const key of Object.keys(cards)) {
-            if (key.toLowerCase().includes(cardLower)) { found = true; break; }
-          }
-        }
-        if (found) break;
-      }
-      if (found) found_in.push(deckInfo);
-    } catch(e) { continue; }
-    // Small pause — be polite to Moxfield
-    await new Promise(res => setTimeout(res, 80));
-  }
-
+  // Moxfield's API blocks cross-origin requests (CORS) and server-side requests
+  // (Cloudflare IP reputation). Best we can do is generate a deep search link.
   return {
-    username, found_in, unknown: [],
-    total_decks: deckList.length,
-    profile_url: profileUrl,
-    search_url:  searchUrl,
+    username,
+    found_in: [],
+    unknown: [],
+    total_decks: null,
+    profile_url: `https://www.moxfield.com/users/${username}`,
+    search_url: `https://www.moxfield.com/search#q=${encodeURIComponent(cardName)}&authorUsernames=${encodeURIComponent(username)}`,
   };
 }
 
