@@ -370,80 +370,9 @@ def error_mox(username, card_name, msg):
         "search_url":  f"https://www.moxfield.com/search#q={req.utils.quote(card_name)}",
     }
 
-async def search_moxfield_async(username, card_name):
-    """
-    Use Moxfield's public deck search to find decks by a specific user containing a card.
-    Endpoint: /v2/decks/search?q=<card>&authorUsernames=<user>
-    This is the same endpoint the Moxfield search page uses — no auth required.
-    """
-    scraper = cloudscraper.create_scraper(
-        browser={"browser": "chrome", "platform": "darwin", "mobile": False}
-    )
-    scraper.headers.update({
-        "Accept": "application/json",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.moxfield.com/",
-        "Origin": "https://www.moxfield.com",
-    })
-
-    found_in = []
-    total_decks = 0
-
-    # Search for decks by this user containing this card name
-    # Moxfield search supports authorUsernames filter and card name query
-    search_url = (
-        f"https://api.moxfield.com/v2/decks/search"
-        f"?pageNumber=1&pageSize=100"
-        f"&q={req.utils.quote(card_name)}"
-        f"&authorUsernames={req.utils.quote(username)}"
-        f"&sortType=updated&sortDirection=Descending"
-    )
-
-    try:
-        r = scraper.get(search_url, timeout=15)
-        if r.ok:
-            data = r.json()
-            results = data.get("data", [])
-            total_decks = data.get("totalResults", len(results))
-            for deck in results:
-                public_id = deck.get("publicId") or deck.get("id", "")
-                found_in.append({
-                    "name":   deck.get("name", "Unnamed"),
-                    "format": deck.get("format", ""),
-                    "url":    f"https://www.moxfield.com/decks/{public_id}",
-                })
-        else:
-            # Fallback: try fetching user's deck list page (public HTML) and
-            # link to Moxfield search for the card
-            return error_mox(username, card_name,
-                f"Moxfield search returned {r.status_code}. "
-                "The Moxfield deck search may be temporarily unavailable.")
-    except Exception as e:
-        return error_mox(username, card_name, f"Could not reach Moxfield: {e}")
-
-    return {
-        "username":    username,
-        "found_in":    found_in,
-        "unknown":     [],
-        "total_decks": total_decks,
-        "profile_url": f"https://www.moxfield.com/users/{username}",
-        "search_url":  (
-            f"https://www.moxfield.com/search"
-            f"#q={req.utils.quote(card_name)}"
-            f"&authorUsernames={req.utils.quote(username)}"
-        ),
-    }
-
-def search_moxfield(username, card_name):
-    """Sync wrapper around the async Playwright moxfield search."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(search_moxfield_async(username, card_name))
-    except Exception as e:
-        return error_mox(username, card_name, f"Moxfield error: {e}")
-    finally:
-        loop.close()
+# Moxfield is handled entirely client-side in the frontend.
+# Render's data-center IP gets 403 from Moxfield's Cloudflare regardless of approach.
+# The browser (residential IP) calls api.moxfield.com directly with no issues.
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
@@ -465,21 +394,7 @@ def api_search():
     except Exception as e:
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
-@app.route("/api/moxfield")
-def api_moxfield():
-    username = request.args.get("username", "").strip()
-    card     = request.args.get("card", "").strip()
-    if not username or not card:
-        return jsonify({"error": "username and card required"}), 400
-    try:
-        # Moxfield search is synchronous (cloudscraper), run in thread pool
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as ex:
-            future = ex.submit(search_moxfield, username, card)
-            result = future.result(timeout=120)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
 
 @app.route("/api/debug")
 def api_debug():
