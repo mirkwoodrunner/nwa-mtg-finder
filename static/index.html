@@ -19,25 +19,25 @@
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{background:var(--darker);color:var(--text);font-family:'Crimson Pro',serif;font-size:16px;
-  min-height:100vh;padding-top:var(--safe-top);padding-bottom:calc(var(--safe-bottom)+20px)}
+  min-height:100vh;padding-top:var(--safe-top);padding-bottom:calc(var(--safe-bottom)+40px)}
 body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   background:radial-gradient(ellipse at 15% 15%,rgba(74,144,217,.06) 0%,transparent 55%),
              radial-gradient(ellipse at 85% 85%,rgba(74,144,217,.04) 0%,transparent 55%)}
-.page{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:0 16px 40px}
+.page{position:relative;z-index:1;max-width:700px;margin:0 auto;padding:0 16px 60px}
 
-/* ── Header ── */
-header{padding:36px 0 24px;text-align:center}
+/* Header */
+header{padding:36px 0 20px;text-align:center}
 header::after{content:'';display:block;width:160px;height:1px;
-  background:linear-gradient(90deg,transparent,var(--gold),transparent);margin:20px auto 0}
+  background:linear-gradient(90deg,transparent,var(--gold),transparent);margin:16px auto 0}
 .eyebrow{font-family:'Cinzel',serif;font-size:9px;letter-spacing:5px;color:var(--gold-dim);
   text-transform:uppercase;margin-bottom:10px}
-h1{font-family:'Cinzel',serif;font-size:clamp(1.8rem,7vw,3.2rem);font-weight:900;
+h1{font-family:'Cinzel',serif;font-size:clamp(1.8rem,7vw,3rem);font-weight:900;
   color:var(--gold-light);text-shadow:0 0 50px rgba(74,144,217,.3);letter-spacing:2px;line-height:1.1}
-.subtitle{margin-top:8px;color:var(--text-dim);font-style:italic;font-size:.95rem}
+.subtitle{margin-top:8px;color:var(--text-dim);font-style:italic;font-size:.9rem}
 
-/* ── Search + autocomplete ── */
-.search-section{padding:20px 0 16px;display:flex;flex-direction:column;align-items:center;gap:10px}
-.search-outer{position:relative;width:100%;max-width:580px}
+/* Search */
+.search-section{padding:16px 0 12px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.search-outer{position:relative;width:100%;max-width:560px}
 .search-wrap{display:flex;border:1px solid var(--gold-dim);border-radius:4px;
   overflow:hidden;background:var(--surface);transition:border-color .2s,box-shadow .2s}
 .search-wrap:focus-within{border-color:var(--gold);box-shadow:0 0 0 3px rgba(74,144,217,.15)}
@@ -45,12 +45,12 @@ h1{font-family:'Cinzel',serif;font-size:clamp(1.8rem,7vw,3.2rem);font-weight:900
   font-family:'Crimson Pro',serif;font-size:1.05rem;min-width:0}
 #q::placeholder{color:var(--text-dim)}
 #searchBtn{background:var(--gold);border:none;padding:14px 20px;font-family:'Cinzel',serif;
-  font-size:.68rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#fff;
+  font-size:.65rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#fff;
   cursor:pointer;transition:background .15s;white-space:nowrap;flex-shrink:0}
 #searchBtn:active{background:var(--gold-light);color:var(--dark)}
-#searchBtn:disabled{background:var(--gold-dim)}
+#searchBtn:disabled{background:var(--gold-dim);cursor:default}
 
-/* Autocomplete dropdown */
+/* Autocomplete */
 #autocomplete{display:none;position:absolute;top:100%;left:0;right:0;z-index:100;
   background:var(--surface2);border:1px solid var(--border);border-top:none;
   border-radius:0 0 4px 4px;max-height:220px;overflow-y:auto}
@@ -58,189 +58,153 @@ h1{font-family:'Cinzel',serif;font-size:clamp(1.8rem,7vw,3.2rem);font-weight:900
   border-bottom:1px solid rgba(74,144,217,.06)}
 .ac-item:last-child{border-bottom:none}
 .ac-item:hover,.ac-item.active{background:rgba(74,144,217,.1);color:var(--gold-light)}
-.search-hint{font-size:.78rem;color:var(--text-dim);font-style:italic;text-align:center;line-height:1.6}
 
-/* ── Search history ── */
-#historyRow{display:none;width:100%;max-width:580px;flex-wrap:wrap;gap:6px;justify-content:center}
-.hist-chip{font-family:'Cinzel',serif;font-size:.58rem;letter-spacing:.8px;text-transform:uppercase;
-  padding:4px 10px;border-radius:12px;border:1px solid var(--gold-dim);color:var(--text-dim);
-  cursor:pointer;background:none;transition:all .15s;display:flex;align-items:center;gap:5px}
-.hist-chip:hover{border-color:var(--gold);color:var(--gold-light);background:rgba(74,144,217,.08)}
-.hist-chip .hist-x{opacity:.4;font-size:.8em;line-height:1}
-.hist-chip .hist-x:hover{opacity:1;color:var(--red)}
-.hist-label{font-family:'Cinzel',serif;font-size:.55rem;letter-spacing:2px;text-transform:uppercase;
-  color:var(--gold-dim);width:100%;text-align:center;margin-bottom:2px}
+/* Search history */
+#historyRow{display:none;flex-wrap:wrap;gap:6px;justify-content:center;max-width:560px;width:100%}
+.hist-label{font-size:.72rem;color:var(--text-dim);letter-spacing:1px;
+  text-transform:uppercase;align-self:center;padding-right:4px}
+.hist-chip{background:var(--surface2);border:1px solid var(--border);border-radius:20px;
+  padding:4px 10px 4px 12px;font-family:'Crimson Pro',serif;font-size:.82rem;color:var(--text-dim);
+  cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:border-color .15s}
+.hist-chip:hover{border-color:var(--gold);color:var(--text)}
+.hist-x{opacity:.5;font-size:.7rem;padding:1px 2px}
+.hist-x:hover{opacity:1;color:var(--red)}
 
-/* ── Moxfield setting ── */
-.mox-setting{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;
-  background:var(--surface);border:1px solid var(--border);border-radius:4px;
-  padding:10px 16px;width:100%;max-width:580px}
-.mox-setting-label{font-family:'Cinzel',serif;font-size:.62rem;letter-spacing:1.5px;
-  text-transform:uppercase;color:var(--gold-dim);white-space:nowrap}
-.mox-setting input{flex:1;background:transparent;border:none;outline:none;color:var(--text);
-  font-family:'Crimson Pro',serif;font-size:.95rem;min-width:120px;
-  border-bottom:1px solid var(--border)}
-.mox-setting input::placeholder{color:var(--text-dim)}
-.mox-setting input:focus{border-bottom-color:var(--gold)}
-.mox-setting-hint{font-size:.72rem;color:var(--text-dim);font-style:italic;white-space:nowrap}
+/* Mox setting */
+.mox-setting{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;
+  font-size:.78rem;color:var(--text-dim)}
+.mox-setting-label{font-family:'Cinzel',serif;font-size:.62rem;letter-spacing:1px;
+  text-transform:uppercase;color:var(--gold-dim)}
+#moxUsername{background:var(--surface);border:1px solid var(--gold-dim);border-radius:3px;
+  padding:4px 8px;color:var(--text);font-family:'Crimson Pro',serif;font-size:.85rem;
+  width:140px;outline:none}
+#moxUsername:focus{border-color:var(--gold)}
+.mox-setting-hint{font-style:italic;font-size:.73rem}
 
-/* ── Card panel ── */
+/* Card panel */
 #cardPanel{display:none;background:var(--surface);border:1px solid var(--border);
-  border-radius:4px;overflow:hidden;margin-bottom:20px;animation:fadeDown .3s ease}
-
-/* Printing tabs */
+  border-radius:6px;margin:16px 0 0;overflow:hidden}
+.cp-loading{padding:28px;text-align:center;color:var(--text-dim);font-style:italic}
 .cp-tabs{display:flex;overflow-x:auto;background:var(--darker);border-bottom:1px solid var(--border);
-  scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  scrollbar-width:none;padding:0 2px}
 .cp-tabs::-webkit-scrollbar{display:none}
-.cp-tab{flex-shrink:0;font-family:'Cinzel',serif;font-size:.55rem;letter-spacing:.8px;
-  text-transform:uppercase;padding:8px 12px;color:var(--text-dim);cursor:pointer;
-  border-bottom:2px solid transparent;white-space:nowrap;background:none;border-top:none;
-  border-left:none;border-right:none;transition:color .15s}
-.cp-tab:hover{color:var(--text)}
-.cp-tab.active{color:var(--gold-light);border-bottom-color:var(--gold)}
-
-.cp-inner{display:flex;align-items:stretch}
-.cp-img{flex-shrink:0;width:130px;background:var(--surface2);display:flex;align-items:center;
-  justify-content:center;padding:12px;border-right:1px solid var(--border)}
-@media(max-width:500px){.cp-img{width:90px;padding:8px}}
-.cp-img img{width:100%;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.5);
-  cursor:pointer;transition:transform .2s}
+.cp-tab{flex-shrink:0;padding:8px 14px;font-family:'Cinzel',serif;font-size:.58rem;
+  letter-spacing:.8px;text-transform:uppercase;border:none;background:none;
+  color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}
+.cp-tab:hover{color:var(--gold-light)}
+.cp-tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.cp-inner{display:flex;gap:16px;padding:16px}
+.cp-img{flex-shrink:0;width:130px}
+.cp-img img{width:100%;border-radius:8px;cursor:zoom-in;transition:transform .15s;display:block}
 .cp-img img:hover{transform:scale(1.03)}
-.cp-img-ph{width:100%;aspect-ratio:5/7;background:var(--surface3);border-radius:8px;
-  border:1px solid var(--border);display:flex;align-items:center;justify-content:center;
-  color:var(--text-dim);font-size:.7rem;font-style:italic}
-.cp-info{flex:1;padding:14px;min-width:0;display:flex;flex-direction:column;gap:10px}
-.cp-name{font-family:'Cinzel',serif;font-size:clamp(.85rem,2.5vw,1.15rem);font-weight:700;
-  color:var(--gold-light);line-height:1.2}
-.cp-meta{font-size:.8rem;color:var(--text-dim);font-style:italic;line-height:1.4}
-
-/* Oracle text */
-.cp-oracle{font-size:.8rem;color:var(--text);line-height:1.55;border-left:2px solid var(--gold-dim);
-  padding-left:10px;font-style:italic;max-height:72px;overflow:hidden}
+.cp-img-ph{width:100%;height:180px;background:var(--surface2);border-radius:8px;
+  display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:.8rem}
+.cp-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+.cp-name{font-family:'Cinzel',serif;font-size:1.05rem;font-weight:700;color:var(--gold-light)}
+.cp-meta{font-size:.78rem;color:var(--text-dim);margin-top:2px}
+.cp-oracle{font-size:.85rem;line-height:1.5;color:var(--text);max-height:80px;overflow:hidden;
+  transition:max-height .3s}
 .cp-oracle.exp{max-height:none}
-.cp-toggle{background:none;border:none;color:var(--gold-dim);font-size:.68rem;
-  font-family:'Cinzel',serif;letter-spacing:1px;cursor:pointer;padding:2px 0;text-transform:uppercase}
+.cp-toggle{background:none;border:none;color:var(--gold-dim);font-size:.75rem;cursor:pointer;
+  padding:2px 0;font-family:'Crimson Pro',serif;font-style:italic}
+.cp-toggle:hover{color:var(--gold)}
+.cp-rulings{display:flex;flex-direction:column;gap:6px}
+.cp-ruling{font-size:.78rem;line-height:1.45;color:var(--text);padding:6px 8px;
+  background:var(--surface2);border-radius:3px;border-left:2px solid var(--gold-dim)}
+.cp-ruling-date{font-size:.68rem;color:var(--text-dim);margin-bottom:2px}
+.price-row{display:flex;flex-wrap:wrap;gap:8px}
+.price-item{display:flex;flex-direction:column;gap:2px}
+.price-lbl{font-size:.68rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px}
+.price-val{font-size:.95rem;font-weight:600;color:var(--gold-light)}
+.sum-deal{font-size:.72rem;font-weight:400;color:var(--green);margin-left:4px}
+.leg-row{display:flex;flex-wrap:wrap;gap:4px}
+.leg{font-family:'Cinzel',serif;font-size:.58rem;letter-spacing:.5px;padding:2px 7px;
+  border-radius:10px;text-transform:uppercase}
+.leg-legal{background:rgba(74,217,150,.15);color:var(--green);border:1px solid rgba(74,217,150,.3)}
+.leg-banned{background:rgba(224,112,112,.12);color:var(--red);border:1px solid rgba(224,112,112,.25)}
+.leg-restricted{background:rgba(255,180,50,.12);color:#ffb432;border:1px solid rgba(255,180,50,.25)}
+.cp-links{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border);flex-wrap:wrap}
+.cp-btn{font-family:'Cinzel',serif;font-size:.6rem;letter-spacing:1px;text-transform:uppercase;
+  padding:7px 13px;border-radius:3px;text-decoration:none;border:1px solid var(--border);
+  color:var(--text-dim);cursor:pointer;background:none;transition:all .15s;white-space:nowrap}
+.cp-btn:hover,.cp-btn:active{border-color:var(--gold);color:var(--gold)}
+.cp-btn.edhrec{border-color:rgba(74,217,150,.3);color:var(--green)}
+.cp-btn.mox{border-color:rgba(74,144,217,.3);color:var(--blue)}
 
-/* Rulings */
-.cp-rulings{border-left:2px solid var(--gold-dim);padding-left:10px;display:flex;
-  flex-direction:column;gap:6px;max-height:120px;overflow-y:auto}
-.cp-ruling{font-size:.76rem;color:var(--text-dim);line-height:1.5}
-.cp-ruling-date{font-family:'Cinzel',serif;font-size:.55rem;letter-spacing:.8px;
-  color:var(--gold-dim);text-transform:uppercase;margin-bottom:2px}
+/* Store selector */
+#storeSection{margin-top:20px;display:none}
+.section-label{font-family:'Cinzel',serif;font-size:.65rem;letter-spacing:2px;
+  text-transform:uppercase;color:var(--text-dim);margin-bottom:10px;text-align:center}
+.store-btns{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.store-btn{font-family:'Cinzel',serif;font-size:.62rem;letter-spacing:1px;text-transform:uppercase;
+  padding:10px 16px;border-radius:4px;border:1px solid var(--gold-dim);background:var(--surface);
+  color:var(--text-dim);cursor:pointer;transition:all .2s;display:flex;flex-direction:column;
+  align-items:center;gap:3px;min-width:120px}
+.store-btn:hover{border-color:var(--gold);color:var(--gold);background:rgba(74,144,217,.06)}
+.store-btn.loading{border-color:var(--gold);color:var(--gold);background:rgba(74,144,217,.1);
+  cursor:default;animation:pulse 1.2s ease-in-out infinite}
+.store-btn.done-found{border-color:var(--green);color:var(--green);background:rgba(74,217,150,.08)}
+.store-btn.done-none{border-color:var(--text-dim);color:var(--text-dim);opacity:.6}
+.store-btn.done-err{border-color:var(--red);color:var(--red);opacity:.7}
+.store-btn-sub{font-size:.58rem;letter-spacing:.5px;opacity:.75}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 
-/* Legality + prices */
-.leg-row{display:flex;flex-wrap:wrap;gap:5px}
-.leg{font-family:'Cinzel',serif;font-size:.55rem;letter-spacing:.8px;text-transform:uppercase;
-  padding:3px 7px;border-radius:2px}
-.leg-legal{background:rgba(93,186,132,.15);color:var(--green);border:1px solid rgba(93,186,132,.3)}
-.leg-banned{background:rgba(224,112,112,.15);color:var(--red);border:1px solid rgba(224,112,112,.3)}
-.leg-restricted{background:rgba(74,144,217,.12);color:var(--gold);border:1px solid rgba(74,144,217,.3)}
-.price-row{display:flex;gap:14px;flex-wrap:wrap}
-.price-item{display:flex;flex-direction:column;gap:1px}
-.price-lbl{font-family:'Cinzel',serif;font-size:.55rem;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim)}
-.price-val{font-family:'Cinzel',serif;font-size:.9rem;font-weight:700;color:var(--gold-light)}
+/* Results panel */
+#resultsPanel{margin-top:16px}
+.result-header{display:flex;align-items:center;justify-content:space-between;
+  padding:10px 14px;background:var(--surface);border:1px solid var(--border);
+  border-radius:4px 4px 0 0;border-bottom:none}
+.result-store-name{font-family:'Cinzel',serif;font-size:.72rem;letter-spacing:1px;
+  text-transform:uppercase;color:var(--gold-light)}
+.result-body{background:var(--surface);border:1px solid var(--border);border-radius:0 0 4px 4px}
 
-/* Card action buttons */
-.cp-links{display:flex;gap:8px;flex-wrap:wrap;padding:10px 14px;
-  border-top:1px solid var(--border);background:var(--surface2);align-items:center}
-.cp-btn{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--gold-dim);
-  color:var(--gold);font-family:'Cinzel',serif;font-size:.56rem;letter-spacing:1.2px;
-  text-transform:uppercase;padding:6px 11px;border-radius:3px;text-decoration:none;
-  transition:background .15s,color .15s;background:none;cursor:pointer}
-.cp-btn:active,.cp-btn:hover{background:var(--gold);color:#fff}
-.cp-btn.edhrec{border-color:#a93226;color:#e07070}.cp-btn.edhrec:hover{background:#a93226;color:#fff}
-.cp-btn.mox{border-color:#2e6cc7;color:var(--blue)}.cp-btn.mox:hover{background:#2e6cc7;color:#fff}
-.cp-btn.share{border-color:#3a7a5a;color:#4ad996}.cp-btn.share:hover{background:#3a7a5a;color:#fff}
-.cp-loading{padding:24px;text-align:center;color:var(--text-dim);font-style:italic;font-size:.86rem}
-
-/* ── Status bar ── */
-#statusBar{display:none;background:var(--surface2);border:1px solid var(--border);border-radius:3px;
-  padding:11px 16px;margin-bottom:20px;align-items:center;justify-content:space-between;
-  flex-wrap:wrap;gap:8px;animation:fadeDown .25s ease}
-.sum-lbl{font-family:'Cinzel',serif;font-size:.65rem;letter-spacing:2px;text-transform:uppercase;color:var(--gold-dim)}
-.sum-lbl span{color:var(--gold-light)}
-.sum-best{font-size:.88rem;color:var(--text-dim)}
-.sum-best strong{color:var(--green)}
-.sum-deal{color:var(--green);font-size:.8rem;margin-left:4px}
-
-/* ── Moxfield panel ── */
-#moxPanel{display:none;background:var(--surface);border:1px solid var(--border);
-  border-radius:4px;overflow:hidden;margin-bottom:20px;animation:fadeDown .3s ease}
-.mox-head{display:flex;justify-content:space-between;align-items:center;padding:11px 16px;
-  background:var(--surface2);border-bottom:1px solid var(--border)}
-.mox-title{font-family:'Cinzel',serif;font-size:.68rem;font-weight:700;letter-spacing:1.5px;
-  text-transform:uppercase;color:#6ab0d4}
-.mox-body{padding:8px 0}
-.mox-deck-row{display:flex;justify-content:space-between;align-items:center;gap:12px;
-  padding:8px 16px;border-bottom:1px solid rgba(74,144,217,.06);text-decoration:none;color:inherit}
-.mox-deck-row:last-child{border-bottom:none}
-.mox-deck-row:active{background:rgba(106,176,212,.05)}
-.mox-deck-name{font-size:.88rem;color:var(--text)}
-.mox-deck-fmt{font-size:.72rem;color:var(--text-dim);font-style:italic;margin-top:2px}
-.mox-deck-badge{font-family:'Cinzel',serif;font-size:.55rem;letter-spacing:.8px;text-transform:uppercase;
-  padding:3px 8px;border-radius:2px;white-space:nowrap;flex-shrink:0}
-.mox-in{background:rgba(93,186,132,.12);color:var(--green);border:1px solid rgba(93,186,132,.3)}
-.mox-unknown{background:rgba(74,144,217,.08);color:var(--gold-dim);border:1px solid var(--border)}
-.mox-foot{padding:9px 16px;border-top:1px solid var(--border);display:flex;gap:12px;background:var(--surface2)}
-.mox-foot a{font-family:'Cinzel',serif;font-size:.58rem;letter-spacing:1.2px;text-transform:uppercase;
-  color:var(--gold-dim);text-decoration:none}
-.mox-foot a:hover{color:var(--gold)}
-
-/* ── Store grid ── */
-.divider{display:flex;align-items:center;gap:14px;margin:4px 0 16px}
-.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
-.divider-text{font-family:'Cinzel',serif;font-size:.58rem;letter-spacing:3px;text-transform:uppercase;
-  color:var(--gold-dim);white-space:nowrap}
-.stores-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:8px}
-@media(max-width:560px){.stores-grid{grid-template-columns:1fr}}
-.store-card{background:var(--surface);border:1px solid var(--border);border-radius:4px;
-  overflow:hidden;display:flex;flex-direction:column;animation:fadeDown .3s ease}
-.store-head{display:flex;justify-content:space-between;align-items:center;padding:11px 14px;
-  background:var(--surface2);border-bottom:1px solid var(--border);gap:8px}
-.store-nm{font-family:'Cinzel',serif;font-size:.62rem;font-weight:700;letter-spacing:1.2px;
-  text-transform:uppercase;color:var(--gold);flex:1;min-width:0}
-.badge{font-family:'Cinzel',serif;font-size:.58rem;letter-spacing:.8px;text-transform:uppercase;
-  padding:3px 8px;border-radius:2px;white-space:nowrap;flex-shrink:0}
-.b-live{background:rgba(93,186,132,.12);color:var(--green);border:1px solid rgba(93,186,132,.3)}
-.b-err{background:rgba(224,112,112,.12);color:var(--red);border:1px solid rgba(224,112,112,.3)}
-.b-spin{background:rgba(74,144,217,.08);color:var(--gold-dim);border:1px solid var(--border)}
-.store-body{flex:1;padding:4px 0;min-height:90px}
-a.rr{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:9px 14px;
-  border-bottom:1px solid rgba(74,144,217,.06);text-decoration:none;color:inherit;transition:background .1s}
-a.rr:last-child{border-bottom:none}
-a.rr:active{background:rgba(74,144,217,.06)}
+/* Result rows */
+.rr{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;
+  text-decoration:none;color:inherit;border-bottom:1px solid rgba(74,144,217,.06);
+  transition:background .12s;gap:10px}
+.rr:last-child{border-bottom:none}
+.rr:hover{background:rgba(74,144,217,.06)}
 .ri{flex:1;min-width:0}
-.rt{font-size:.88rem;color:var(--text);line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rs{font-size:.72rem;color:var(--text-dim);font-style:italic;margin-top:2px}
-.rright{text-align:right;flex-shrink:0}
-.rp{font-family:'Cinzel',serif;font-size:.86rem;font-weight:700;color:var(--gold-light)}
+.rt{font-size:.88rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rs{font-size:.73rem;color:var(--text-dim);margin-top:1px}
+.rright{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0}
+.rp{font-size:.95rem;font-weight:600;color:var(--gold-light)}
 .rp.best{color:var(--green)}
-.rp.deal{color:var(--green)}
-.rdeal{font-size:.65rem;color:var(--green);margin-top:1px}
-.rstk{font-size:.68rem;color:var(--text-dim);margin-top:2px}
-.state-msg{padding:24px 14px;text-align:center;color:var(--text-dim);font-style:italic;font-size:.86rem;line-height:1.6}
-.spinner{width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--gold);
-  border-radius:50%;animation:spin .65s linear infinite;margin:0 auto 10px}
+.rdeal{font-size:.68rem;color:var(--green)}
+.rstk{font-size:.68rem;color:var(--text-dim)}
+.state-msg{padding:20px;text-align:center;color:var(--text-dim);font-style:italic;font-size:.88rem;
+  line-height:1.6}
+.state-msg a{color:var(--gold);font-style:normal}
+
+/* Badge */
+.badge{font-family:'Cinzel',serif;font-size:.58rem;letter-spacing:.5px;text-transform:uppercase;
+  padding:3px 8px;border-radius:10px}
+.b-live{background:rgba(74,217,150,.15);color:var(--green);border:1px solid rgba(74,217,150,.3)}
+.b-err{background:rgba(224,112,112,.12);color:var(--red);border:1px solid rgba(224,112,112,.2)}
+.b-none{background:rgba(90,122,154,.1);color:var(--text-dim);border:1px solid var(--border)}
+.b-spin{background:rgba(74,144,217,.1);color:var(--gold);border:1px solid rgba(74,144,217,.3)}
+
+/* Spinner */
+.spinner{width:18px;height:18px;border:2px solid rgba(74,144,217,.2);
+  border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}
-.store-foot{padding:8px 14px;border-top:1px solid var(--border)}
-.foot-link{font-family:'Cinzel',serif;font-size:.58rem;letter-spacing:1.2px;text-transform:uppercase;
-  color:var(--gold-dim);text-decoration:none}
 
-/* warm banner */
-#warmBanner{display:none;background:rgba(74,144,217,.08);border:1px solid rgba(74,144,217,.2);
-  border-radius:3px;padding:12px 16px;margin-bottom:20px;font-size:.82rem;color:var(--text-dim);
-  text-align:center;line-height:1.6}
+/* Mox panel */
+#moxPanel{display:none;background:var(--surface);border:1px solid var(--border);
+  border-radius:6px;margin-top:12px;overflow:hidden}
+.mox-head{display:flex;align-items:center;justify-content:space-between;
+  padding:10px 14px;border-bottom:1px solid var(--border)}
+.mox-title{font-family:'Cinzel',serif;font-size:.68rem;letter-spacing:1px;
+  text-transform:uppercase;color:var(--gold-light)}
 
-#resultsArea{display:none}
-footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--border);text-align:center;
-  font-size:.74rem;color:var(--text-dim);font-style:italic}
-@keyframes fadeDown{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
-
-/* Image lightbox */
+/* Lightbox */
 #lightbox{display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,.85);
   align-items:center;justify-content:center;cursor:zoom-out}
 #lightbox.open{display:flex}
 #lightbox img{max-width:min(90vw,400px);border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.7)}
+
+footer{text-align:center;padding:28px 0 0;color:var(--text-dim);font-size:.73rem;
+  font-style:italic;opacity:.6}
 </style>
 </head>
 <body>
@@ -248,7 +212,7 @@ footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--border);text-
   <header>
     <p class="eyebrow">Northwest Arkansas</p>
     <h1>MTG Local Finder</h1>
-    <p class="subtitle">Compare singles across every local store at once</p>
+    <p class="subtitle">Find singles at every local store</p>
   </header>
 
   <section class="search-section">
@@ -261,181 +225,120 @@ footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--border);text-
       <div id="autocomplete"></div>
     </div>
     <div id="historyRow"></div>
-    <p class="search-hint">All 5 local stores · Scryfall · EDHREC · Moxfield</p>
     <div class="mox-setting">
       <span class="mox-setting-label">Moxfield</span>
       <input type="text" id="moxUsername" value="mirkwoodrunner"
         autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"/>
-      <span class="mox-setting-hint">Change to search a different user's decks</span>
+      <span class="mox-setting-hint">your username</span>
     </div>
   </section>
 
-  <div id="warmBanner">☕ First search may take 20–30 s while the server wakes up. Subsequent searches will be fast!</div>
   <div id="cardPanel"></div>
   <div id="moxPanel"></div>
 
-  <div id="statusBar">
-    <div class="sum-lbl">Results for: <span id="sumQuery"></span></div>
-    <div class="sum-best" id="sumBest"></div>
+  <!-- Store picker — shown after a card search -->
+  <div id="storeSection">
+    <p class="section-label">Check a store</p>
+    <div class="store-btns" id="storeBtns"></div>
   </div>
 
-  <div id="resultsArea">
-    <div class="divider"><span class="divider-text">All Local Stores</span></div>
-    <div class="stores-grid" id="storesGrid"></div>
-  </div>
-
-  <footer>Card data via Scryfall API · Prices from local store listings · Not affiliated with any retailer ✦</footer>
+  <!-- Results for whichever store was last searched -->
+  <div id="resultsPanel"></div>
 </div>
 
-<!-- Image lightbox -->
 <div id="lightbox"><img id="lightboxImg" src="" alt="Card"></div>
 
 <script>
 // ═══════════════════════════════════════════════════════════
-// SEARCH HISTORY  (localStorage, max 20)
+// STORES
 // ═══════════════════════════════════════════════════════════
-const HISTORY_KEY = 'mtg_search_history';
+const STORES = [
+  {id:"finalboss", name:"Final Boss Games"},
+  {id:"gearbv",   name:"Gear Gaming",      sub:"Bentonville"},
+  {id:"gearfv",   name:"Gear Gaming",      sub:"Fayetteville"},
+  {id:"chaos",    name:"Chaos Games"},
+  {id:"xxplo",    name:"Games Explosion"},
+];
 
-function getHistory() {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }
-  catch { return []; }
-}
+// Track state per store for current query
+let storeState = {}; // id -> {status:'idle'|'loading'|'done', results, error, search_url}
+let currentQuery = '';
+let currentMinPrice = null;
+let allPrintings = [];
+let currentCard = null;
+
+// ═══════════════════════════════════════════════════════════
+// HISTORY
+// ═══════════════════════════════════════════════════════════
+const HK = 'mtg_search_history';
+const getHistory = () => { try { return JSON.parse(localStorage.getItem(HK)||'[]'); } catch { return []; } };
+const saveHistory = h => localStorage.setItem(HK, JSON.stringify(h.slice(0,20)));
 
 function addHistory(q) {
   const h = getHistory().filter(x => x.toLowerCase() !== q.toLowerCase());
-  h.unshift(q);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 20)));
-  renderHistory();
-}
-
-function removeHistory(q) {
-  const h = getHistory().filter(x => x !== q);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
-  renderHistory();
+  h.unshift(q); saveHistory(h); renderHistory();
 }
 
 function renderHistory() {
-  const h = getHistory();
-  const row = document.getElementById('historyRow');
-  if (!h.length) { row.style.display = 'none'; return; }
-  row.innerHTML = `<span class="hist-label">Recent</span>` +
-    h.map(q => `<button class="hist-chip" onclick="histSearch(event,'${q.replace(/'/g,"\\'")}')">
-      ${q}
-      <span class="hist-x" onclick="histRemove(event,'${q.replace(/'/g,"\\'")}')">✕</span>
+  const h = getHistory(), row = document.getElementById('historyRow');
+  if (!h.length) { row.style.display='none'; return; }
+  row.innerHTML = '<span class="hist-label">Recent</span>' +
+    h.map(q => `<button class="hist-chip" onclick="histSearch(event,${JSON.stringify(q)})">
+      ${q}<span class="hist-x" onclick="histRemove(event,${JSON.stringify(q)})">✕</span>
     </button>`).join('');
   row.style.display = 'flex';
 }
 
-function histSearch(e, q) {
-  e.stopPropagation();
-  document.getElementById('q').value = q;
-  doSearch();
-}
-
+function histSearch(e, q) { e.stopPropagation(); document.getElementById('q').value=q; doSearch(); }
 function histRemove(e, q) {
   e.preventDefault(); e.stopPropagation();
-  removeHistory(q);
+  saveHistory(getHistory().filter(x=>x!==q)); renderHistory();
 }
 
 // ═══════════════════════════════════════════════════════════
-// AUTOCOMPLETE  (Scryfall)
+// AUTOCOMPLETE
 // ═══════════════════════════════════════════════════════════
-let acIndex = -1, acResults = [], acTimer = null;
+let acIndex=-1, acTimer=null;
 
 document.getElementById('q').addEventListener('input', () => {
   clearTimeout(acTimer);
-  const val = document.getElementById('q').value.trim();
-  if (val.length < 2) { hideAC(); return; }
-  acTimer = setTimeout(() => fetchAC(val), 220);
+  const v = document.getElementById('q').value.trim();
+  if (v.length < 2) { hideAC(); return; }
+  acTimer = setTimeout(() => fetchAC(v), 220);
 });
 
 document.getElementById('q').addEventListener('keydown', e => {
-  const box = document.getElementById('autocomplete');
-  const items = box.querySelectorAll('.ac-item');
-  if (e.key === 'ArrowDown') { e.preventDefault(); acIndex = Math.min(acIndex+1, items.length-1); highlightAC(items); }
-  else if (e.key === 'ArrowUp') { e.preventDefault(); acIndex = Math.max(acIndex-1, -1); highlightAC(items); }
-  else if (e.key === 'Enter') {
-    if (acIndex >= 0 && items[acIndex]) { e.preventDefault(); selectAC(items[acIndex].textContent); }
-    else { hideAC(); doSearch(); }
-  }
-  else if (e.key === 'Escape') hideAC();
+  const items = document.getElementById('autocomplete').querySelectorAll('.ac-item');
+  if (e.key==='ArrowDown') { e.preventDefault(); acIndex=Math.min(acIndex+1,items.length-1); hilAC(items); }
+  else if (e.key==='ArrowUp') { e.preventDefault(); acIndex=Math.max(acIndex-1,-1); hilAC(items); }
+  else if (e.key==='Enter') { if (acIndex>=0&&items[acIndex]) { e.preventDefault(); selAC(items[acIndex].textContent); } else { hideAC(); doSearch(); } }
+  else if (e.key==='Escape') hideAC();
 });
 
 async function fetchAC(q) {
   try {
-    const r = await fetch(`https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(q)}`);
-    const d = await r.json();
-    acResults = d.data || [];
-    showAC(acResults);
+    const d = await fetch(`https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(q)}`).then(r=>r.json());
+    const items = d.data||[];
+    if (!items.length) { hideAC(); return; }
+    acIndex = -1;
+    document.getElementById('autocomplete').innerHTML =
+      items.slice(0,8).map(n=>`<div class="ac-item" onclick="selAC(${JSON.stringify(n)})">${n}</div>`).join('');
+    document.getElementById('autocomplete').style.display = 'block';
   } catch { hideAC(); }
 }
 
-function showAC(items) {
-  const box = document.getElementById('autocomplete');
-  if (!items.length) { hideAC(); return; }
-  acIndex = -1;
-  box.innerHTML = items.slice(0, 8).map(n =>
-    `<div class="ac-item" onclick="selectAC('${n.replace(/'/g,"\\'")}')">` + n + `</div>`
-  ).join('');
-  box.style.display = 'block';
+function hilAC(items) {
+  items.forEach((el,i)=>el.classList.toggle('active',i===acIndex));
+  if (acIndex>=0&&items[acIndex]) document.getElementById('q').value=items[acIndex].textContent;
 }
-
-function highlightAC(items) {
-  items.forEach((el, i) => el.classList.toggle('active', i === acIndex));
-  if (acIndex >= 0 && items[acIndex]) document.getElementById('q').value = items[acIndex].textContent;
-}
-
-function hideAC() {
-  document.getElementById('autocomplete').style.display = 'none';
-  acIndex = -1;
-}
-
-function selectAC(name) {
-  document.getElementById('q').value = name;
-  hideAC();
-  doSearch();
-}
-
-document.addEventListener('click', e => {
-  if (!e.target.closest('.search-outer')) hideAC();
-});
+function hideAC() { document.getElementById('autocomplete').style.display='none'; acIndex=-1; }
+function selAC(name) { document.getElementById('q').value=name; hideAC(); doSearch(); }
+document.addEventListener('click', e => { if (!e.target.closest('.search-outer')) hideAC(); });
 
 // ═══════════════════════════════════════════════════════════
-// SCRYFALL — card data + printings + rulings
+// SCRYFALL
 // ═══════════════════════════════════════════════════════════
-let currentCard = null;   // full card object of currently displayed printing
-let allPrintings = [];    // list of all printings for current card name
-let currentRulings = [];  // rulings for current card
-
-async function scryfallFuzzy(q) {
-  try {
-    const r = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(q)}`);
-    return r.ok ? r.json() : null;
-  } catch { return null; }
-}
-
-async function fetchPrintings(cardName) {
-  try {
-    const r = await fetch(
-      `https://api.scryfall.com/cards/search?q=!"${encodeURIComponent(cardName)}"&unique=prints&order=released`
-    );
-    if (!r.ok) return [];
-    const d = await r.json();
-    return d.data || [];
-  } catch { return []; }
-}
-
-async function fetchRulings(rulingsUri) {
-  try {
-    const r = await fetch(rulingsUri);
-    if (!r.ok) return [];
-    const d = await r.json();
-    return d.data || [];
-  } catch { return []; }
-}
-
-const FMTS = {standard:"Standard",pioneer:"Pioneer",modern:"Modern",
-              legacy:"Legacy",vintage:"Vintage",commander:"Commander",pauper:"Pauper"};
+const FMTS = {standard:"Standard",pioneer:"Pioneer",modern:"Modern",legacy:"Legacy",vintage:"Vintage",commander:"Commander",pauper:"Pauper"};
 
 function mana(c) {
   if (!c) return '';
@@ -444,382 +347,293 @@ function mana(c) {
           .replace(/\{(\d+)\}/g,'$1').replace(/\{([^}]+)\}/g,'$1');
 }
 
-function renderCard(card, printings, rulings, tcgPrice) {
+async function fetchPrintings(name) {
+  try {
+    const r = await fetch(`https://api.scryfall.com/cards/search?q=!"${encodeURIComponent(name)}"&unique=prints&order=released`);
+    return r.ok ? (await r.json()).data||[] : [];
+  } catch { return []; }
+}
+
+async function fetchRulings(uri) {
+  try { const r=await fetch(uri); return r.ok?(await r.json()).data||[]:[];} catch{return[];}
+}
+
+function renderCard(card, printings, rulings) {
   currentCard = card;
   const panel = document.getElementById('cardPanel');
-  if (!card) { panel.style.display = 'none'; return; }
+  if (!card) { panel.style.display='none'; return; }
 
   const img = card.image_uris?.border_crop || card.card_faces?.[0]?.image_uris?.border_crop || null;
   const imgLarge = card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal || img;
-  const oracle = (card.oracle_text || card.card_faces?.[0]?.oracle_text || '').replace(/\n/g,'<br>');
+  const oracle = (card.oracle_text||card.card_faces?.[0]?.oracle_text||'').replace(/\n/g,'<br>');
 
-  // Legalities
-  const legs = Object.entries(FMTS).map(([f,l]) => {
-    const s = card.legalities?.[f];
-    if (!s || s === 'not_legal') return '';
+  const legs = Object.entries(FMTS).map(([f,l])=>{
+    const s=card.legalities?.[f];
+    if(!s||s==='not_legal') return '';
     return `<span class="leg leg-${s}">${l}</span>`;
   }).filter(Boolean).join('');
 
-  // Prices — compare to TCG market
-  const pr = card.prices || {};
-  const storeMin = tcgPrice; // lowest local price passed in
-  let priceHtml = '';
-  if (pr.usd) {
-    const tcgNum = parseFloat(pr.usd);
-    const dealFlag = storeMin && storeMin < tcgNum
-      ? `<span class="sum-deal">▼ Local save $${(tcgNum - storeMin).toFixed(2)}</span>` : '';
-    priceHtml += `<div class="price-item"><span class="price-lbl">TCG Market</span>
-      <span class="price-val">$${pr.usd}${dealFlag}</span></div>`;
-  }
-  if (pr.usd_foil) {
-    priceHtml += `<div class="price-item"><span class="price-lbl">Foil</span>
-      <span class="price-val">$${pr.usd_foil}</span></div>`;
+  const pr = card.prices||{};
+  let priceHtml='';
+  if (pr.usd) priceHtml+=`<div class="price-item"><span class="price-lbl">TCG Market</span><span class="price-val">$${pr.usd}</span></div>`;
+  if (pr.usd_foil) priceHtml+=`<div class="price-item"><span class="price-lbl">Foil</span><span class="price-val">$${pr.usd_foil}</span></div>`;
+
+  let tabsHtml='';
+  if (printings.length>1) {
+    tabsHtml=`<div class="cp-tabs">`+
+      printings.map((p,i)=>`<button class="cp-tab${p.id===card.id?' active':''}" onclick="switchPrinting(${i})">${p.set_name} (${p.set.toUpperCase()})</button>`).join('')+`</div>`;
   }
 
-  // Printings tabs
-  let tabsHtml = '';
-  if (printings.length > 1) {
-    tabsHtml = `<div class="cp-tabs">` +
-      printings.map((p, i) => {
-        const isActive = p.id === card.id;
-        return `<button class="cp-tab${isActive?' active':''}" onclick="switchPrinting(${i})">${p.set_name} (${p.set.toUpperCase()})</button>`;
-      }).join('') + `</div>`;
-  }
+  let rulingsHtml='';
+  if (rulings.length) rulingsHtml=`<div class="cp-rulings">${rulings.slice(0,4).map(r=>`<div class="cp-ruling"><div class="cp-ruling-date">${r.published_at}</div>${r.comment}</div>`).join('')}</div>`;
 
-  // Rulings
-  let rulingsHtml = '';
-  if (rulings.length) {
-    const shown = rulings.slice(0, 4);
-    rulingsHtml = `<div>
-      <div class="cp-rulings">
-        ${shown.map(r=>`<div class="cp-ruling"><div class="cp-ruling-date">${r.published_at}</div>${r.comment}</div>`).join('')}
-      </div>
-    </div>`;
-  }
-
-  // Links + share
-  const ehref = card.related_uris?.edhrec || `https://edhrec.com/cards/${card.name.toLowerCase().replace(/[^a-z0-9]+/g,'-')}`;
-  const mhref = `https://www.moxfield.com/search#q=${encodeURIComponent(card.name)}`;
-  const shref = card.scryfall_uri || `https://scryfall.com/search?q=${encodeURIComponent(card.name)}`;
+  const ehref = card.related_uris?.edhrec||`https://edhrec.com/cards/${card.name.toLowerCase().replace(/[^a-z0-9]+/g,'-')}`;
+  const mUser = document.getElementById('moxUsername').value.trim();
+  const mhref = mUser
+    ? `https://www.moxfield.com/search#q=${encodeURIComponent(card.name)}&authorUsernames=${encodeURIComponent(mUser)}`
+    : `https://www.moxfield.com/search#q=${encodeURIComponent(card.name)}`;
 
   panel.innerHTML = `
     ${tabsHtml}
     <div class="cp-inner">
-      <div class="cp-img">
-        ${img
-          ? `<img src="${img}" data-large="${imgLarge}" alt="${card.name}" loading="lazy" onclick="openLightbox(this)">`
-          : `<div class="cp-img-ph">No image</div>`}
-      </div>
+      <div class="cp-img">${img?`<img src="${img}" data-large="${imgLarge}" alt="${card.name}" loading="lazy" onclick="openLightbox(this)">`:`<div class="cp-img-ph">No image</div>`}</div>
       <div class="cp-info">
         <div>
           <div class="cp-name">${card.name} <span style="color:var(--text-dim);font-size:.8em">${mana(card.mana_cost||'')}</span></div>
           <div class="cp-meta">${card.type_line||''} · ${card.set_name||''} (${(card.set||'').toUpperCase()})</div>
         </div>
-        ${oracle ? `<div>
-          <div class="cp-oracle" id="oracleEl">${oracle}</div>
-          <button class="cp-toggle" id="oracleBtn" onclick="toggleOracle()">Show more ↓</button>
-        </div>` : ''}
+        ${oracle?`<div><div class="cp-oracle" id="oracleEl">${oracle}</div><button class="cp-toggle" id="oracleBtn" onclick="toggleOracle()">Show more ↓</button></div>`:''}
         ${rulingsHtml}
-        ${priceHtml ? `<div class="price-row">${priceHtml}</div>` : ''}
-        ${legs ? `<div class="leg-row">${legs}</div>` : ''}
+        ${priceHtml?`<div class="price-row">${priceHtml}</div>`:''}
+        ${legs?`<div class="leg-row">${legs}</div>`:''}
       </div>
     </div>
     <div class="cp-links">
       <a class="cp-btn edhrec" href="${ehref}" target="_blank">EDHREC</a>
       <a class="cp-btn mox" href="${mhref}" target="_blank">Moxfield</a>
-      <a class="cp-btn" href="${shref}" target="_blank">Scryfall</a>
-      <button class="cp-btn share" onclick="shareCard()">⬆ Share</button>
+      <a class="cp-btn" href="${card.scryfall_uri||'#'}" target="_blank">Scryfall</a>
     </div>`;
-  panel.style.display = 'block';
+  panel.style.display='block';
 
-  const el = document.getElementById('oracleEl');
-  const btn = document.getElementById('oracleBtn');
-  if (el && btn && el.scrollHeight <= el.clientHeight + 4) btn.style.display = 'none';
-
-  // Scroll tabs to active
-  const activeTab = panel.querySelector('.cp-tab.active');
-  if (activeTab) activeTab.scrollIntoView({behavior:'auto', block:'nearest', inline:'center'});
+  const el=document.getElementById('oracleEl'),btn=document.getElementById('oracleBtn');
+  if(el&&btn&&el.scrollHeight<=el.clientHeight+4) btn.style.display='none';
+  const at=panel.querySelector('.cp-tab.active');
+  if(at) at.scrollIntoView({behavior:'auto',block:'nearest',inline:'center'});
 }
 
 function toggleOracle() {
-  const el = document.getElementById('oracleEl'), btn = document.getElementById('oracleBtn');
-  if (!el || !btn) return;
+  const el=document.getElementById('oracleEl'),btn=document.getElementById('oracleBtn');
+  if(!el||!btn) return;
   el.classList.toggle('exp');
-  btn.textContent = el.classList.contains('exp') ? 'Show less ↑' : 'Show more ↓';
+  btn.textContent=el.classList.contains('exp')?'Show less ↑':'Show more ↓';
 }
 
-async function switchPrinting(index) {
-  const printing = allPrintings[index];
-  if (!printing) return;
-  // Fetch full card data for this printing
+async function switchPrinting(i) {
+  const p=allPrintings[i]; if(!p) return;
   try {
-    const r = await fetch(`https://api.scryfall.com/cards/${printing.id}`);
-    if (r.ok) {
-      const card = await r.json();
-      const rulings = card.rulings_uri ? await fetchRulings(card.rulings_uri) : [];
-      renderCard(card, allPrintings, rulings, currentMinPrice);
-    }
-  } catch {}
+    const r=await fetch(`https://api.scryfall.com/cards/${p.id}`);
+    if(r.ok){const card=await r.json();const rulings=card.rulings_uri?await fetchRulings(card.rulings_uri):[];renderCard(card,allPrintings,rulings);}
+  } catch{}
 }
 
 // ═══════════════════════════════════════════════════════════
 // LIGHTBOX
 // ═══════════════════════════════════════════════════════════
 function openLightbox(img) {
-  document.getElementById('lightboxImg').src = img.dataset.large || img.src;
+  document.getElementById('lightboxImg').src=img.dataset.large||img.src;
   document.getElementById('lightbox').classList.add('open');
 }
-document.getElementById('lightbox').addEventListener('click', () => {
-  document.getElementById('lightbox').classList.remove('open');
-});
+document.getElementById('lightbox').addEventListener('click',()=>document.getElementById('lightbox').classList.remove('open'));
 
 // ═══════════════════════════════════════════════════════════
-// SHARE
+// MOXFIELD PANEL (deep link only — CORS blocks API calls)
 // ═══════════════════════════════════════════════════════════
-async function shareCard() {
-  if (!currentCard) return;
-  const storeLines = lastStoreData?.stores
-    ?.flatMap(s => (s.results||[]).filter(r=>r.available&&r.price)
-      .map(r => `${s.name}: $${r.price.toFixed(2)}`))
-    ?.slice(0, 5) || [];
-
-  const text = [
-    `${currentCard.name} — NWA Local Prices`,
-    ...storeLines,
-    storeLines.length ? '' : 'No local stock found.',
-    `TCG Market: $${currentCard.prices?.usd || '?'}`,
-    window.location.href,
-  ].join('\n');
-
-  if (navigator.share) {
-    try { await navigator.share({ title: currentCard.name, text }); return; }
-    catch {}
-  }
-  // Fallback: copy to clipboard
-  try {
-    await navigator.clipboard.writeText(text);
-    const btn = document.querySelector('.cp-btn.share');
-    if (btn) { btn.textContent = '✓ Copied!'; setTimeout(() => btn.textContent = '⬆ Share', 2000); }
-  } catch {}
-}
-
-// ═══════════════════════════════════════════════════════════
-// MOXFIELD PANEL
-// ═══════════════════════════════════════════════════════════
-function renderMoxPanel(data) {
+function renderMoxPanel(cardName) {
   const panel = document.getElementById('moxPanel');
-  if (!data) { panel.style.display = 'none'; return; }
-  const {username, profile_url, search_url} = data;
+  const mUser = document.getElementById('moxUsername').value.trim();
+  if (!mUser || !cardName) { panel.style.display='none'; return; }
+  const searchUrl = `https://www.moxfield.com/search#q=${encodeURIComponent(cardName)}&authorUsernames=${encodeURIComponent(mUser)}`;
+  const profileUrl = `https://www.moxfield.com/users/${encodeURIComponent(mUser)}`;
   panel.innerHTML = `
-    <div class="mox-head"><span class="mox-title">📚 ${username}'s Decks</span></div>
-    <div class="mox-body">
-      <div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">
-        <div style="font-size:.85rem;color:var(--text)">Search your Moxfield decks for this card:</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <a href="${search_url}" target="_blank" style="display:inline-flex;align-items:center;
-            gap:6px;background:var(--gold);color:#fff;font-family:'Cinzel',serif;font-size:.6rem;
-            letter-spacing:1.2px;text-transform:uppercase;padding:8px 14px;border-radius:3px;
-            text-decoration:none">🔍 Search ${username}'s decks →</a>
-          <a href="${profile_url}" target="_blank" style="display:inline-flex;align-items:center;
-            gap:6px;border:1px solid var(--gold-dim);color:var(--gold);font-family:'Cinzel',serif;
-            font-size:.6rem;letter-spacing:1.2px;text-transform:uppercase;padding:8px 14px;
-            border-radius:3px;text-decoration:none">View Profile →</a>
-        </div>
-        <div style="font-size:.72rem;color:var(--text-dim);font-style:italic">
-          Opens Moxfield filtered to your decks containing this card</div>
-      </div>
+    <div class="mox-head"><span class="mox-title">📚 ${mUser}'s Decks</span></div>
+    <div style="padding:12px 14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <a href="${searchUrl}" target="_blank" style="display:inline-flex;align-items:center;
+        background:var(--gold);color:#fff;font-family:'Cinzel',serif;font-size:.6rem;
+        letter-spacing:1px;text-transform:uppercase;padding:8px 14px;border-radius:3px;
+        text-decoration:none">🔍 Search ${mUser}'s decks →</a>
+      <a href="${profileUrl}" target="_blank" style="display:inline-flex;align-items:center;
+        border:1px solid var(--gold-dim);color:var(--gold);font-family:'Cinzel',serif;
+        font-size:.6rem;letter-spacing:1px;text-transform:uppercase;padding:8px 14px;
+        border-radius:3px;text-decoration:none">View Profile →</a>
+      <span style="font-size:.72rem;color:var(--text-dim);font-style:italic">Opens Moxfield filtered to your decks</span>
     </div>`;
-  panel.style.display = 'block';
+  panel.style.display='block';
 }
 
-
 // ═══════════════════════════════════════════════════════════
-// STORE CARDS
+// STORE BUTTONS
 // ═══════════════════════════════════════════════════════════
-const bdg = (cls, txt) => `<span class="badge ${cls}">${txt}</span>`;
-
-const ALL_STORES = [
-  {id:"finalboss", name:"Final Boss Games"},
-  {id:"gearbv",   name:"Gear Gaming — Bentonville"},
-  {id:"gearfv",   name:"Gear Gaming — Fayetteville"},
-  {id:"chaos",    name:"Chaos Games"},
-  {id:"xxplo",    name:"Games Explosion"},
-];
-
-function loadingCards() {
-  return ALL_STORES.map(s => `<div class="store-card" id="sc-${s.id}">
-    <div class="store-head"><span class="store-nm">${s.name}</span>${bdg('b-spin','Searching…')}</div>
-    <div class="store-body"><div class="state-msg"><div class="spinner"></div>Fetching inventory…</div></div>
-    <div class="store-foot"><span class="foot-link" style="opacity:.3">Loading…</span></div>
-  </div>`).join('');
+function renderStoreBtns() {
+  document.getElementById('storeBtns').innerHTML = STORES.map(s => {
+    const st = storeState[s.id];
+    let cls='store-btn', sub=s.sub||'';
+    if (st?.status==='loading') { cls+=' loading'; sub='Searching…'; }
+    else if (st?.status==='done') {
+      const n = st.results?.length||0;
+      if (st.error && !n) { cls+=' done-err'; sub='Error'; }
+      else if (!n) { cls+=' done-none'; sub='Not found'; }
+      else { cls+=' done-found'; sub=`${n} found`; }
+    }
+    return `<button class="${cls}" onclick="searchStore('${s.id}')" ${st?.status==='loading'?'disabled':''}>
+      ${s.name}
+      ${sub?`<span class="store-btn-sub">${sub}</span>`:''}
+    </button>`;
+  }).join('');
 }
 
-function renderStoreCard(s, tcgMarket) {
-  const searchUrl = s.search_url || `${s.url}/search?q=${encodeURIComponent(currentQuery)}&type=product`;
-  const results = (s.results || []).filter(r => r.available);
-  const inStk = results.filter(r => r.price);
-  const minP = inStk.length ? Math.min(...inStk.map(r => r.price)) : null;
-  let bh, body;
+// ═══════════════════════════════════════════════════════════
+// SINGLE STORE SEARCH
+// ═══════════════════════════════════════════════════════════
+async function searchStore(storeId) {
+  if (storeState[storeId]?.status === 'loading') return;
+  if (!currentQuery) return;
 
-  if (s.error && !results.length) {
-    bh = bdg('b-err', 'Error');
-    body = `<div class="state-msg">Couldn't fetch inventory.<br>
-      <a href="${searchUrl}" target="_blank" style="color:var(--gold);font-style:normal">Search on site →</a></div>`;
+  storeState[storeId] = { status:'loading', results:[], error:null };
+  renderStoreBtns();
+  showStoreResults(storeId, null); // loading state
+
+  try {
+    const url = `/api/search?q=${encodeURIComponent(currentQuery)}&store=${storeId}`;
+    const data = await fetch(url).then(r=>r.json());
+    storeState[storeId] = { status:'done', results:data.results||[], error:data.error, search_url:data.search_url };
+  } catch(e) {
+    storeState[storeId] = { status:'done', results:[], error:'Network error', search_url:null };
+  }
+
+  // Update best local price across all completed stores
+  currentMinPrice = null;
+  Object.values(storeState).forEach(st => {
+    (st.results||[]).forEach(r => {
+      if (r.price && (currentMinPrice===null || r.price < currentMinPrice)) currentMinPrice = r.price;
+    });
+  });
+
+  renderStoreBtns();
+  showStoreResults(storeId, storeState[storeId]);
+}
+
+function showStoreResults(storeId, st) {
+  const store = STORES.find(s=>s.id===storeId);
+  const panel = document.getElementById('resultsPanel');
+  const tcgMarket = currentCard?.prices?.usd ? parseFloat(currentCard.prices.usd) : null;
+
+  if (!st) {
+    // Loading state
+    panel.innerHTML = `
+      <div class="result-header">
+        <span class="result-store-name">${store.name}${store.sub?' — '+store.sub:''}</span>
+        <span class="badge b-spin"><span class="spinner" style="width:12px;height:12px;vertical-align:middle;margin-right:4px"></span>Searching…</span>
+      </div>
+      <div class="result-body"><div class="state-msg">Fetching inventory…</div></div>`;
+    panel.style.display='block';
+    return;
+  }
+
+  const results = (st.results||[]).filter(r=>r.available);
+  const searchUrl = st.search_url || `#`;
+  const prices = results.filter(r=>r.price).map(r=>r.price);
+  const minP = prices.length ? Math.min(...prices) : null;
+
+  let badge, body;
+  if (st.error && !results.length) {
+    badge = `<span class="badge b-err">Error</span>`;
+    body  = `<div class="state-msg">Couldn't fetch inventory.<br><a href="${searchUrl}" target="_blank">Search on site →</a></div>`;
   } else if (!results.length) {
-    bh = bdg('b-live', '0 found');
-    body = `<div class="state-msg">Nothing found for "${currentQuery}".<br>
-      <a href="${searchUrl}" target="_blank" style="color:var(--gold);font-style:normal">Search on site →</a></div>`;
+    badge = `<span class="badge b-none">Not found</span>`;
+    body  = `<div class="state-msg">Nothing in stock for "${currentQuery}".<br><a href="${searchUrl}" target="_blank">Search on site →</a></div>`;
   } else {
-    bh = bdg('b-live', `${results.length} found`);
-    body = results.map(r => {
-      const ps = r.price != null ? `$${r.price.toFixed(2)}` : '—';
-      const best = r.price && r.price === minP;
-      // Deal badge: cheaper than TCG market price
+    badge = `<span class="badge b-live">${results.length} found</span>`;
+    body  = results.map(r => {
+      const ps = r.price!=null ? `$${r.price.toFixed(2)}` : '—';
+      const best = r.price && r.price===minP;
       const isDeal = tcgMarket && r.price && r.price < tcgMarket;
-      const saving = isDeal ? (tcgMarket - r.price).toFixed(2) : null;
+      const saving = isDeal ? (tcgMarket-r.price).toFixed(2) : null;
       return `<a class="rr" href="${r.url}" target="_blank">
-        <div class="ri">
-          <div class="rt">${r.name}</div>
-          ${r.set ? `<div class="rs">${r.set}</div>` : ''}
-        </div>
+        <div class="ri"><div class="rt">${r.name}</div>${r.set?`<div class="rs">${r.set}</div>`:''}</div>
         <div class="rright">
-          <div class="rp ${best?'best':''}">${ps}</div>
-          ${isDeal ? `<div class="rdeal">▼ $${saving} vs TCG</div>` : `<div class="rstk">In stock</div>`}
+          <div class="rp${best?' best':''}">${ps}</div>
+          ${isDeal?`<div class="rdeal">▼ $${saving} vs TCG</div>`:`<div class="rstk">In stock</div>`}
         </div>
       </a>`;
     }).join('');
   }
 
-  return `<div class="store-card" id="sc-${s.id}">
-    <div class="store-head"><span class="store-nm">${s.name}</span>${bh}</div>
-    <div class="store-body">${body}</div>
-    <div class="store-foot"><a class="foot-link" href="${searchUrl}" target="_blank">Search on site →</a></div>
-  </div>`;
-}
-
-function initUI() {
-  document.getElementById('storesGrid').innerHTML = ALL_STORES.map(s => `<div class="store-card">
-    <div class="store-head"><span class="store-nm">${s.name}</span>${bdg('b-spin','Ready')}</div>
-    <div class="store-body"><div class="state-msg">Search for a card above.</div></div>
-    <div class="store-foot"><span class="foot-link" style="opacity:.3">—</span></div>
-  </div>`).join('');
-  document.getElementById('resultsArea').style.display = 'block';
-  renderHistory();
+  panel.innerHTML = `
+    <div class="result-header">
+      <span class="result-store-name">${store.name}${store.sub?' — '+store.sub:''}</span>
+      ${badge}
+    </div>
+    <div class="result-body">${body}</div>
+    <div style="padding:8px 14px;border-top:1px solid var(--border);background:var(--surface)">
+      <a href="${searchUrl}" target="_blank" style="font-size:.75rem;color:var(--gold-dim);text-decoration:none">
+        Search ${store.name} directly →</a>
+    </div>`;
+  panel.style.display='block';
 }
 
 // ═══════════════════════════════════════════════════════════
-// MOXFIELD — deep-link only (Moxfield blocks all cross-origin requests via CORS)
+// MAIN SEARCH (card lookup only — no store queries)
 // ═══════════════════════════════════════════════════════════
-async function searchMoxfield(username, cardName) {
-  // Moxfield's API blocks cross-origin requests (CORS) and server-side requests
-  // (Cloudflare IP reputation). Best we can do is generate a deep search link.
-  return {
-    username,
-    found_in: [],
-    unknown: [],
-    total_decks: null,
-    profile_url: `https://www.moxfield.com/users/${username}`,
-    search_url: `https://www.moxfield.com/search#q=${encodeURIComponent(cardName)}&authorUsernames=${encodeURIComponent(username)}`,
-  };
-}
-
-// ═══════════════════════════════════════════════════════════
-// MAIN SEARCH
-// ═══════════════════════════════════════════════════════════
-let currentQuery = '';
-let currentMinPrice = null;
-let lastStoreData = null;
-let firstSearch = true;
-
 async function doSearch() {
   const query = document.getElementById('q').value.trim();
   if (!query) return;
   currentQuery = query;
+  currentCard = null;
   currentMinPrice = null;
+  storeState = {};
+  allPrintings = [];
   hideAC();
 
-  const moxUser = document.getElementById('moxUsername').value.trim();
   const btn = document.getElementById('searchBtn');
-  btn.disabled = true; btn.textContent = '…';
+  btn.disabled=true; btn.textContent='…';
 
-  document.getElementById('statusBar').style.display = 'none';
-  document.getElementById('resultsArea').style.display = 'block';
-  document.getElementById('moxPanel').style.display = 'none';
+  // Show card loading
+  document.getElementById('cardPanel').innerHTML=`<div class="cp-loading"><div class="spinner" style="margin:0 auto 8px"></div>Looking up card…</div>`;
+  document.getElementById('cardPanel').style.display='block';
+  document.getElementById('moxPanel').style.display='none';
+  document.getElementById('storeSection').style.display='none';
+  document.getElementById('resultsPanel').style.display='none';
 
-  if (firstSearch) { document.getElementById('warmBanner').style.display = 'block'; firstSearch = false; }
-
-  document.getElementById('storesGrid').innerHTML = loadingCards();
-  document.getElementById('cardPanel').innerHTML = `<div class="cp-loading"><div class="spinner" style="margin:0 auto 8px"></div>Looking up card on Scryfall…</div>`;
-  document.getElementById('cardPanel').style.display = 'block';
-  if (moxUser) showMoxLoading(moxUser);
-
-  const fetchMox = moxUser ? searchMoxfield(moxUser, query) : Promise.resolve(null);
-
-  // Run Scryfall + stores + Moxfield in parallel
-  const [cardData, storeData, moxData] = await Promise.all([
-    scryfallFuzzy(query),
-    fetch(`/api/search?q=${encodeURIComponent(query)}`).then(r=>r.json()).catch(()=>null),
-    fetchMox,
-  ]);
-
-  lastStoreData = storeData;
-
-  // Find best local price for TCG comparison
-  let bestLocalPrice = Infinity, bestStoreName = null;
-  if (storeData?.stores) {
-    storeData.stores.forEach(s => {
-      (s.results||[]).filter(r=>r.available&&r.price).forEach(r => {
-        if (r.price < bestLocalPrice) { bestLocalPrice = r.price; bestStoreName = s.name; }
-      });
-    });
-  }
-  currentMinPrice = bestLocalPrice < Infinity ? bestLocalPrice : null;
-
-  // Fetch printings + rulings in parallel now that we have the base card
-  const [printings, rulings] = cardData ? await Promise.all([
-    fetchPrintings(cardData.name),
-    cardData.rulings_uri ? fetchRulings(cardData.rulings_uri) : Promise.resolve([]),
-  ]) : [[], []];
-
-  allPrintings = printings;
-  const tcgMarket = cardData?.prices?.usd ? parseFloat(cardData.prices.usd) : null;
-
-  renderCard(cardData, printings, rulings, currentMinPrice);
-  renderMoxPanel(moxData);
-  document.getElementById('warmBanner').style.display = 'none';
-
-  if (!storeData) {
-    document.getElementById('storesGrid').innerHTML = ALL_STORES.map(s => `<div class="store-card">
-      <div class="store-head"><span class="store-nm">${s.name}</span>${bdg('b-err','Error')}</div>
-      <div class="store-body"><div class="state-msg">Server error. Please try again.</div></div>
-      <div class="store-foot"><span class="foot-link" style="opacity:.3">—</span></div>
-    </div>`).join('');
-  } else {
-    document.getElementById('storesGrid').innerHTML =
-      storeData.stores.map(s => renderStoreCard(s, tcgMarket)).join('');
-
-    const total = storeData.stores.reduce((n,s) => n + (s.results?.length||0), 0);
-    document.getElementById('sumQuery').textContent = query;
-    const sb = document.getElementById('sumBest');
-    if (bestStoreName) {
-      const saving = tcgMarket && currentMinPrice < tcgMarket
-        ? ` <span class="sum-deal">(▼ $${(tcgMarket-currentMinPrice).toFixed(2)} vs TCG)</span>` : '';
-      sb.innerHTML = `Best in-stock: <strong>$${currentMinPrice.toFixed(2)}</strong> at <strong>${bestStoreName}</strong>${saving}`;
+  // Fetch card from Scryfall
+  try {
+    const r = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(query)}`);
+    if (r.ok) {
+      const card = await r.json();
+      const [printings, rulings] = await Promise.all([
+        fetchPrintings(card.name),
+        card.rulings_uri ? fetchRulings(card.rulings_uri) : Promise.resolve([]),
+      ]);
+      allPrintings = printings;
+      renderCard(card, printings, rulings);
+      renderMoxPanel(card.name);
     } else {
-      sb.innerHTML = total === 0 ? 'No results — try the store links' : `${total} listing${total!==1?'s':''} found`;
+      document.getElementById('cardPanel').innerHTML=`<div class="cp-loading">Card not found on Scryfall. Try exact name.</div>`;
     }
-    document.getElementById('statusBar').style.display = 'flex';
+  } catch {
+    document.getElementById('cardPanel').innerHTML=`<div class="cp-loading">Couldn't reach Scryfall.</div>`;
   }
 
-  // Save to history
-  addHistory(query);
+  // Show store buttons
+  document.getElementById('storeSection').style.display='block';
+  renderStoreBtns();
 
-  btn.disabled = false; btn.textContent = 'Search';
+  addHistory(query);
+  btn.disabled=false; btn.textContent='Search';
 }
 
 document.getElementById('searchBtn').addEventListener('click', doSearch);
-document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter' && acIndex < 0) doSearch(); });
-initUI();
+document.getElementById('q').addEventListener('keydown', e => { if(e.key==='Enter'&&acIndex<0) doSearch(); });
+renderHistory();
 </script>
 </body>
 </html>
