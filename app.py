@@ -238,14 +238,47 @@ def api_search():
 
 @app.route("/api/debug")
 def api_debug():
+    """Verbose per-URL probe of every Shopify endpoint so we can see exactly what's failing."""
+    sc = cloudscraper.create_scraper()
+    query = "lightning bolt"
+    q = req.utils.quote(query)
     out = {}
-    # Test each shopify store
-    for sid in ["finalboss","gearbv","gearfv"]:
-        try:
-            results, err = search_shopify(STORES[sid], "lightning bolt")
-            out[sid] = {"matches":len(results),"first":results[0]["name"] if results else "none","error":err}
-        except Exception as e:
-            out[sid] = {"error":str(e)}
+
+    for sid in ["finalboss", "gearbv", "gearfv"]:
+        store = STORES[sid]
+        probe = {}
+
+        urls_to_try = [
+            ("search_json",   f"{store['url']}/search?q={q}&type=product&view=json"),
+            ("search_plain",  f"{store['url']}/search?q={q}&view=json"),
+            ("col_page1",     f"{store['url']}/collections/{store['col']}/products.json?limit=10&page=1"),
+            ("all_page1",     f"{store['url']}/collections/all/products.json?limit=10&page=1"),
+        ]
+        for label, url in urls_to_try:
+            try:
+                r = sc.get(url, headers=HEADERS, timeout=12)
+                ct = r.headers.get("content-type", "")
+                entry = {"status": r.status_code, "ct": ct[:80]}
+                if "json" in ct:
+                    try:
+                        d = r.json()
+                        products = d.get("products") or d.get("results") or []
+                        entry["products"] = len(products)
+                        if products:
+                            entry["first"] = products[0].get("title","?")[:60]
+                            # search for lightning bolt
+                            lb = [p for p in products if "lightning" in (p.get("title","")).lower()]
+                            entry["lb_matches"] = len(lb)
+                    except Exception as je:
+                        entry["json_err"] = str(je)
+                else:
+                    entry["body_preview"] = r.text[:120].strip()
+            except Exception as e:
+                entry = {"error": str(e)[:120]}
+            probe[label] = entry
+
+        out[sid] = probe
+
     return jsonify(out)
 
 @app.route("/health")
