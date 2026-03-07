@@ -1,8 +1,7 @@
 """
 NWA MTG Local Store Finder — Backend
-Single-store search endpoint: /api/search?q=<card>&store=<id>
+Single-store endpoint: /api/search?q=<card>&store=<id>
 """
-
 import os, re, asyncio, traceback, json
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
@@ -25,8 +24,6 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 HEADERS = {"User-Agent":UA,"Accept":"application/json,text/html,*/*","Accept-Language":"en-US,en;q=0.9"}
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
 def clean_name(t): return re.sub(r"\s*\[.*?\]\s*","",t).strip()
 def extract_set(t):
     m=re.search(r"\[(.+?)\]",t); return m.group(1) if m else ""
@@ -35,13 +32,14 @@ def parse_shopify(products, base_url, query):
     ql = query.lower()
     out = []
     for p in products:
-        if ql not in (p.get("title") or "").lower(): continue
+        title = (p.get("title") or "")
+        if ql not in title.lower(): continue
         variants = [v for v in (p.get("variants") or [{}]) if v.get("available")]
         if not variants: continue
         price = variants[0].get("price")
         out.append({
-            "name":      clean_name(p.get("title") or ""),
-            "set":       extract_set(p.get("title") or ""),
+            "name":      clean_name(title),
+            "set":       extract_set(title),
             "price":     float(price) if price else None,
             "available": True,
             "url":       f"{base_url}/products/{p.get('handle','')}",
@@ -55,33 +53,49 @@ def search_shopify(store, query):
     sc = cloudscraper.create_scraper()
     q  = req.utils.quote(query)
 
-    def get(url):
+    def get_json(url):
         try:
             r = sc.get(url, headers=HEADERS, timeout=12)
             if not r.ok: return None
-            if "json" not in r.headers.get("content-type","").lower(): return None
+            ct = r.headers.get("content-type","").lower()
+            if "json" not in ct: return None
             return r.json()
         except Exception: return None
 
-    # Try search endpoint first (1 request, server-filtered)
-    for path in [f"/search?q={q}&type=product&view=json", f"/search?q={q}&view=json"]:
-        d = get(store["url"] + path)
-        if d:
-            products = d.get("products") or d.get("results") or []
-            parsed = parse_shopify(products, store["url"], query)
-            if parsed: return parsed, None
+    # 1. Try Shopify search endpoint (fast, server-filtered)
+    for path in [
+        f"/search?q={q}&type=product&view=json",
+        f"/search?q={q}&view=json",
+        f"/search.json?q={q}&type=product",
+    ]:
+        d = get_json(store["url"] + path)
+        if d is None: continue
+        products = d.get("products") or d.get("results") or []
+        if not isinstance(products, list): continue
+        parsed = parse_shopify(products, store["url"], query)
+        if parsed:
+            return parsed, None
+        # search worked but no results — still fall through to collection
+        # (some stores return subset of products in search)
 
-    # Paginate collection, bail as soon as we find a match (cap 4 pages)
+    # 2. Paginate collection with early exit — try store-specific collection then "all"
     for collection in [store["col"], "all"]:
-        for pg in range(1, 5):
-            d = get(f"{store['url']}/collections/{collection}/products.json?limit=250&page={pg}")
-            if not d: break
+        found_any_page = False
+        for pg in range(1, 9):  # up to 8 pages = 2000 products
+            d = get_json(f"{store['url']}/collections/{collection}/products.json?limit=250&page={pg}")
+            if d is None: break
             products = d.get("products", [])
             if not products: break
+            found_any_page = True
             parsed = parse_shopify(products, store["url"], query)
-            if parsed: return parsed, None
-            if len(products) < 250: return [], None
-        break
+            if parsed:
+                return parsed, None
+            if len(products) < 250:
+                break  # last page, no match in this collection
+        if found_any_page:
+            # Got responses from this collection but no matches
+            # still try next collection (e.g. "all" may have different products)
+            continue
 
     return [], None
 
@@ -90,7 +104,7 @@ def search_shopify(store, query):
 async def search_tcgpro(store, query):
     search_url = (f"{store['url']}/search/products"
                   f"?productLineName=Magic%3A+The+Gathering&q={req.utils.quote(query)}")
-    domain     = store["url"].replace("https://","").split("/")[0]
+    domain = store["url"].replace("https://","").split("/")[0]
     intercepted = []
 
     async with async_playwright() as p:
@@ -98,37 +112,53 @@ async def search_tcgpro(store, query):
             args=["--no-sandbox","--disable-setuid-sandbox",
                   "--disable-dev-shm-usage","--disable-gpu","--single-process"])
         context = await browser.new_context(user_agent=UA)
-        page    = await context.new_page()
+        page = await context.new_page()
 
         async def on_resp(response):
-            if domain not in response.url: return
-            if response.status != 200: return
-            if "json" not in response.headers.get("content-type",""): return
-            if not any(k in response.url.lower() for k in ["search","product","catalog"]): return
             try:
+                if domain not in response.url: return
+                if response.status != 200: return
+                ct = response.headers.get("content-type","")
+                if "json" not in ct: return
+                if not any(k in response.url.lower() for k in ["search","product","catalog","inventory"]): return
                 data = await response.json()
-                cands = data if isinstance(data,list) else next(
-                    (data[k] for k in ["results","products","items","data","cards"]
-                     if isinstance(data.get(k),list) and data[k]), [])
-                if cands and isinstance(cands[0],dict) and any(
-                        k in cands[0] for k in ["name","productName","cleanName","title"]):
+                # unwrap common envelope shapes
+                cands = []
+                if isinstance(data, list):
+                    cands = data
+                elif isinstance(data, dict):
+                    for key in ["results","products","items","data","cards","catalog"]:
+                        val = data.get(key)
+                        if isinstance(val, list) and val:
+                            cands = val
+                            break
+                if not cands or not isinstance(cands[0], dict): return
+                if any(k in cands[0] for k in ["name","productName","cleanName","title"]):
                     intercepted.append(cands)
             except Exception: pass
 
         page.on("response", on_resp)
         try:
-            await page.goto(search_url, wait_until="networkidle", timeout=25000)
-            await page.wait_for_timeout(2000)
+            # Use domcontentloaded + explicit wait — faster than networkidle
+            await page.goto(search_url, wait_until="domcontentloaded", timeout=20000)
+            # Wait for XHR results to arrive (up to 8s)
+            for _ in range(8):
+                await page.wait_for_timeout(1000)
+                if intercepted: break
         except Exception: pass
         await browser.close()
 
     results = []
+    ql = query.lower()
     for item_list in intercepted:
-        for item in item_list[:15]:
-            if not isinstance(item,dict): continue
+        for item in item_list[:20]:
+            if not isinstance(item, dict): continue
             name = (item.get("name") or item.get("productName") or
                     item.get("cleanName") or item.get("title") or "")
             if not name: continue
+            # Filter to only items matching our query
+            if ql not in name.lower(): continue
+
             price = None
             for pk in ["marketPrice","lowPrice","price","lowestPrice","minPrice","retailPrice","salePrice"]:
                 v = item.get(pk)
@@ -149,19 +179,26 @@ async def search_tcgpro(store, query):
                                     if price > 0: break
                                 except Exception: pass
                     if price: break
+
             qty = item.get("quantity") or item.get("qty") or item.get("stock") or 1
             try:
                 if int(str(qty).split(".")[0]) <= 0: continue
             except Exception: pass
+
             slug = item.get("slug") or item.get("handle") or item.get("urlKey") or ""
             item_url = (f"{store['url']}/product/{slug.lstrip('/')}"
                         if slug and not slug.startswith("http") else slug or search_url)
-            results.append({"name":clean_name(name),"set":item.get("setName") or
-                item.get("groupName") or extract_set(name),
-                "price":price,"available":True,"url":item_url})
+
+            results.append({
+                "name":      clean_name(name),
+                "set":       item.get("setName") or item.get("groupName") or extract_set(name),
+                "price":     price,
+                "available": True,
+                "url":       item_url,
+            })
         if results: break
 
-    return (results, None) if results else ([], "No results found")
+    return (results, None) if results else ([], "No results found" if not intercepted else "No matching items")
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
@@ -201,11 +238,15 @@ def api_search():
 
 @app.route("/api/debug")
 def api_debug():
-    try:
-        results, err = search_shopify(STORES["finalboss"], "plains")
-        return jsonify({"finalboss":{"matches":len(results),"first":results[0]["name"] if results else "none","error":err}})
-    except Exception as e:
-        return jsonify({"error":str(e)})
+    out = {}
+    # Test each shopify store
+    for sid in ["finalboss","gearbv","gearfv"]:
+        try:
+            results, err = search_shopify(STORES[sid], "lightning bolt")
+            out[sid] = {"matches":len(results),"first":results[0]["name"] if results else "none","error":err}
+        except Exception as e:
+            out[sid] = {"error":str(e)}
+    return jsonify(out)
 
 @app.route("/health")
 def health(): return jsonify({"status":"ok"})
