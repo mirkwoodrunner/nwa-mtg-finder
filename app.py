@@ -29,22 +29,28 @@ def extract_set(t):
     m=re.search(r"\[(.+?)\]",t); return m.group(1) if m else ""
 
 def parse_shopify(products, base_url, query):
+    """Parse a batch of Shopify products, returning ALL variants that match the query."""
     ql = query.lower()
     out = []
     for p in products:
         title = (p.get("title") or "")
         if ql not in title.lower(): continue
-        variants = [v for v in (p.get("variants") or [{}]) if v.get("available")]
-        if not variants: continue
-        price = variants[0].get("price")
-        out.append({
-            "name":      clean_name(title),
-            "set":       extract_set(title),
-            "price":     float(price) if price else None,
-            "available": True,
-            "url":       f"{base_url}/products/{p.get('handle','')}",
-        })
-        if len(out) >= 15: break
+        variants = p.get("variants") or [{}]
+        for v in variants:
+            if not v.get("available"): continue
+            price = v.get("price")
+            variant_title = v.get("title", "")
+            # Build a display name: product title + variant if variant isn't just "Default Title"
+            display_name = title
+            if variant_title and variant_title.lower() not in ("default title", ""):
+                display_name = f"{title} — {variant_title}"
+            out.append({
+                "name":      clean_name(display_name),
+                "set":       extract_set(title),
+                "price":     float(price) if price else None,
+                "available": True,
+                "url":       f"{base_url}/products/{p.get('handle','')}",
+            })
     return out
 
 # ── Shopify ───────────────────────────────────────────────────────────────────
@@ -62,7 +68,17 @@ def search_shopify(store, query):
             return r.json()
         except Exception: return None
 
-    # 1. Try Shopify search endpoint (fast, server-filtered)
+    all_results = []
+    seen_keys = set()
+
+    def add_results(parsed):
+        for r in parsed:
+            key = (r["url"], r.get("name", ""))
+            if key not in seen_keys:
+                seen_keys.add(key)
+                all_results.append(r)
+
+    # 1. Try Shopify search endpoint — collect all matches (server pre-filters by query)
     for path in [
         f"/search?q={q}&type=product&view=json",
         f"/search?q={q}&view=json",
@@ -72,32 +88,25 @@ def search_shopify(store, query):
         if d is None: continue
         products = d.get("products") or d.get("results") or []
         if not isinstance(products, list): continue
-        parsed = parse_shopify(products, store["url"], query)
-        if parsed:
-            return parsed, None
-        # search worked but no results — still fall through to collection
-        # (some stores return subset of products in search)
+        add_results(parse_shopify(products, store["url"], query))
+        break  # only use first working search endpoint
 
-    # 2. Paginate collection with early exit — try store-specific collection then "all"
+    # 2. Paginate collection — always run to catch variants/printings search may miss
     for collection in [store["col"], "all"]:
-        found_any_page = False
-        for pg in range(1, 9):  # up to 8 pages = 2000 products
+        collection_had_pages = False
+        for pg in range(1, 9):  # up to 8 pages x 250 = 2000 products
             d = get_json(f"{store['url']}/collections/{collection}/products.json?limit=250&page={pg}")
             if d is None: break
             products = d.get("products", [])
             if not products: break
-            found_any_page = True
-            parsed = parse_shopify(products, store["url"], query)
-            if parsed:
-                return parsed, None
+            collection_had_pages = True
+            add_results(parse_shopify(products, store["url"], query))
             if len(products) < 250:
-                break  # last page, no match in this collection
-        if found_any_page:
-            # Got responses from this collection but no matches
-            # still try next collection (e.g. "all" may have different products)
-            continue
+                break  # last page
+        if collection_had_pages:
+            break  # found a working collection; skip "all"
 
-    return [], None
+    return (all_results, None) if all_results else ([], None)
 
 # ── TCGPlayer Pro ─────────────────────────────────────────────────────────────
 
