@@ -78,9 +78,8 @@ new asyncio event loop per request (sync Flask route → `asyncio.new_event_loop
    - TCGPlayer DOM fallback needed → check if selectors in `_scrape_tcgpro_dom()` match
 
 ## Git workflow
-- Branch: work on a feature branch, PR to `main`, or push directly to `main`
-- Render auto-deploys on every push to `main`
-- Always test locally if possible before pushing
+- Repo: https://github.com/mirkwoodrunner/nwa-mtg-finder
+- Push directly to `main` — Render auto-deploys on every push
 
 ## Owner
 Chris — sole developer. Moxfield username: `mirkwoodrunner`
