@@ -260,8 +260,7 @@ const STORES = [
   {id:"xxplo",    name:"Games Explosion"},
 ];
 
-// Track state per store for current query
-let storeState = {}; // id -> {status:'idle'|'loading'|'done', results, error, search_url}
+let storeState = {};
 let currentQuery = '';
 let currentMinPrice = null;
 let allPrintings = [];
@@ -389,8 +388,9 @@ function renderCard(card, printings, rulings) {
 
   const ehref = card.related_uris?.edhrec||`https://edhrec.com/cards/${card.name.toLowerCase().replace(/[^a-z0-9]+/g,'-')}`;
   const mUser = document.getElementById('moxUsername').value.trim();
+  // Correct Moxfield deep link: /wants searches across all your decks/wants lists
   const mhref = mUser
-    ? `https://www.moxfield.com/search#q=${encodeURIComponent(card.name)}&authorUsernames=${encodeURIComponent(mUser)}`
+    ? `https://www.moxfield.com/wants?username=${encodeURIComponent(mUser)}&q=${encodeURIComponent(card.name)}`
     : `https://www.moxfield.com/search#q=${encodeURIComponent(card.name)}`;
 
   panel.innerHTML = `
@@ -446,13 +446,14 @@ function openLightbox(img) {
 document.getElementById('lightbox').addEventListener('click',()=>document.getElementById('lightbox').classList.remove('open'));
 
 // ═══════════════════════════════════════════════════════════
-// MOXFIELD PANEL (deep link only — CORS blocks API calls)
+// MOXFIELD PANEL
 // ═══════════════════════════════════════════════════════════
 function renderMoxPanel(cardName) {
   const panel = document.getElementById('moxPanel');
   const mUser = document.getElementById('moxUsername').value.trim();
   if (!mUser || !cardName) { panel.style.display='none'; return; }
-  const searchUrl = `https://www.moxfield.com/search#q=${encodeURIComponent(cardName)}&authorUsernames=${encodeURIComponent(mUser)}`;
+  // Correct Moxfield deep link format
+  const searchUrl = `https://www.moxfield.com/wants?username=${encodeURIComponent(mUser)}&q=${encodeURIComponent(cardName)}`;
   const profileUrl = `https://www.moxfield.com/users/${encodeURIComponent(mUser)}`;
   panel.innerHTML = `
     <div class="mox-head"><span class="mox-title">📚 ${mUser}'s Decks</span></div>
@@ -500,7 +501,7 @@ async function searchStore(storeId) {
 
   storeState[storeId] = { status:'loading', results:[], error:null };
   renderStoreBtns();
-  showStoreResults(storeId, null); // loading state
+  showStoreResults(storeId, null);
 
   try {
     const url = `/api/search?q=${encodeURIComponent(currentQuery)}&store=${storeId}`;
@@ -510,7 +511,6 @@ async function searchStore(storeId) {
     storeState[storeId] = { status:'done', results:[], error:'Network error', search_url:null };
   }
 
-  // Update best local price across all completed stores
   currentMinPrice = null;
   Object.values(storeState).forEach(st => {
     (st.results||[]).forEach(r => {
@@ -528,7 +528,6 @@ function showStoreResults(storeId, st) {
   const tcgMarket = currentCard?.prices?.usd ? parseFloat(currentCard.prices.usd) : null;
 
   if (!st) {
-    // Loading state
     panel.innerHTML = `
       <div class="result-header">
         <span class="result-store-name">${store.name}${store.sub?' — '+store.sub:''}</span>
@@ -582,7 +581,7 @@ function showStoreResults(storeId, st) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// MAIN SEARCH (card lookup only — no store queries)
+// MAIN SEARCH
 // ═══════════════════════════════════════════════════════════
 async function doSearch() {
   const query = document.getElementById('q').value.trim();
@@ -597,14 +596,12 @@ async function doSearch() {
   const btn = document.getElementById('searchBtn');
   btn.disabled=true; btn.textContent='…';
 
-  // Show card loading
   document.getElementById('cardPanel').innerHTML=`<div class="cp-loading"><div class="spinner" style="margin:0 auto 8px"></div>Looking up card…</div>`;
   document.getElementById('cardPanel').style.display='block';
   document.getElementById('moxPanel').style.display='none';
   document.getElementById('storeSection').style.display='none';
   document.getElementById('resultsPanel').style.display='none';
 
-  // Fetch card from Scryfall
   try {
     const r = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(query)}`);
     if (r.ok) {
@@ -623,7 +620,6 @@ async function doSearch() {
     document.getElementById('cardPanel').innerHTML=`<div class="cp-loading">Couldn't reach Scryfall.</div>`;
   }
 
-  // Show store buttons
   document.getElementById('storeSection').style.display='block';
   renderStoreBtns();
 
