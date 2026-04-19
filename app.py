@@ -2,12 +2,13 @@
 NWA MTG Local Store Finder — Backend
 Single-store endpoint: /api/search?q=<card>&store=<id>
 """
-import os, re, asyncio, traceback, json
+import os, re, asyncio, traceback, json, time
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 import requests as req
 import cloudscraper
 from playwright.async_api import async_playwright
+from playwright_stealth import stealth_async
 
 app = Flask(__name__, static_folder="static")
 CORS(app)
@@ -28,19 +29,30 @@ def clean_name(t): return re.sub(r"\s*\[.*?\]\s*","",t).strip()
 def extract_set(t):
     m=re.search(r"\[(.+?)\]",t); return m.group(1) if m else ""
 
+def name_matches(title, query):
+    """Fuzzy match: all query words must appear in title (handles reordering/extra words)."""
+    tl = title.lower()
+    ql = query.lower()
+    # Exact substring match first (fast path)
+    if ql in tl:
+        return True
+    # All-words match (handles "bolt lightning" vs "lightning bolt")
+    words = [w for w in ql.split() if len(w) > 2]
+    return all(w in tl for w in words) if words else False
+
 def parse_shopify(products, base_url, query):
     """Parse a batch of Shopify products, returning ALL variants that match the query."""
-    ql = query.lower()
     out = []
     for p in products:
         title = (p.get("title") or "")
-        if ql not in title.lower(): continue
+        if not name_matches(title, query):
+            continue
         variants = p.get("variants") or [{}]
         for v in variants:
-            if not v.get("available"): continue
+            if not v.get("available"):
+                continue
             price = v.get("price")
             variant_title = v.get("title", "")
-            # Build a display name: product title + variant if variant isn't just "Default Title"
             display_name = title
             if variant_title and variant_title.lower() not in ("default title", ""):
                 display_name = f"{title} — {variant_title}"
@@ -55,18 +67,29 @@ def parse_shopify(products, base_url, query):
 
 # ── Shopify ───────────────────────────────────────────────────────────────────
 
+def get_json_with_retry(sc, url, retries=2, timeout=12):
+    """Fetch JSON from URL with simple retry logic."""
+    for attempt in range(retries + 1):
+        try:
+            r = sc.get(url, headers=HEADERS, timeout=timeout)
+            if not r.ok:
+                if attempt < retries:
+                    time.sleep(1)
+                    continue
+                return None
+            ct = r.headers.get("content-type", "").lower()
+            if "json" not in ct:
+                return None
+            return r.json()
+        except Exception:
+            if attempt < retries:
+                time.sleep(1)
+            continue
+    return None
+
 def search_shopify(store, query):
     sc = cloudscraper.create_scraper()
     q  = req.utils.quote(query)
-
-    def get_json(url):
-        try:
-            r = sc.get(url, headers=HEADERS, timeout=12)
-            if not r.ok: return None
-            ct = r.headers.get("content-type","").lower()
-            if "json" not in ct: return None
-            return r.json()
-        except Exception: return None
 
     all_results = []
     seen_keys = set()
@@ -78,27 +101,35 @@ def search_shopify(store, query):
                 seen_keys.add(key)
                 all_results.append(r)
 
-    # 1. Try Shopify search endpoint — collect all matches (server pre-filters by query)
+    # 1. Try Shopify/BinderPOS search endpoint
+    search_hit = False
     for path in [
         f"/search?q={q}&type=product&view=json",
         f"/search?q={q}&view=json",
         f"/search.json?q={q}&type=product",
     ]:
-        d = get_json(store["url"] + path)
-        if d is None: continue
+        d = get_json_with_retry(sc, store["url"] + path)
+        if d is None:
+            continue
         products = d.get("products") or d.get("results") or []
-        if not isinstance(products, list): continue
+        if not isinstance(products, list):
+            continue
         add_results(parse_shopify(products, store["url"], query))
-        break  # only use first working search endpoint
+        search_hit = True
+        break  # first working search endpoint wins
 
-    # 2. Paginate collection — always run to catch variants/printings search may miss
+    # 2. Paginate collection — always run: catches items search misses,
+    #    especially when search endpoint returns 0 but collection has the card.
+    #    Try store-specific collection first, fall back to "all".
     for collection in [store["col"], "all"]:
         collection_had_pages = False
-        for pg in range(1, 9):  # up to 8 pages x 250 = 2000 products
-            d = get_json(f"{store['url']}/collections/{collection}/products.json?limit=250&page={pg}")
-            if d is None: break
+        for pg in range(1, 9):  # up to 8 pages × 250 = 2000 products
+            d = get_json_with_retry(sc, f"{store['url']}/collections/{collection}/products.json?limit=250&page={pg}")
+            if d is None:
+                break
             products = d.get("products", [])
-            if not products: break
+            if not products:
+                break
             collection_had_pages = True
             add_results(parse_shopify(products, store["url"], query))
             if len(products) < 250:
@@ -115,88 +146,124 @@ async def search_tcgpro(store, query):
                   f"?productLineName=Magic%3A+The+Gathering&q={req.utils.quote(query)}")
     domain = store["url"].replace("https://","").split("/")[0]
     intercepted = []
+    dom_results = []
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True,
             args=["--no-sandbox","--disable-setuid-sandbox",
                   "--disable-dev-shm-usage","--disable-gpu","--single-process"])
-        context = await browser.new_context(user_agent=UA)
+        context = await browser.new_context(
+            user_agent=UA,
+            viewport={"width": 1280, "height": 800},
+            locale="en-US",
+        )
         page = await context.new_page()
+
+        # Apply stealth to reduce bot detection
+        await stealth_async(page)
 
         async def on_resp(response):
             try:
-                if domain not in response.url: return
-                if response.status != 200: return
-                ct = response.headers.get("content-type","")
-                if "json" not in ct: return
-                if not any(k in response.url.lower() for k in ["search","product","catalog","inventory"]): return
-                data = await response.json()
-                # unwrap common envelope shapes
+                url = response.url
+                if domain not in url:
+                    return
+                if response.status != 200:
+                    return
+                ct = response.headers.get("content-type", "")
+                if "json" not in ct:
+                    return
+                # Broader match: anything that could be inventory/search data
+                skip_keywords = ["analytics", "telemetry", "tracking", "gtm", "segment",
+                                 "hotjar", "sentry", "favicon", "font", "css"]
+                if any(k in url.lower() for k in skip_keywords):
+                    return
+                try:
+                    data = await response.json()
+                except Exception:
+                    return
+                # Unwrap common envelope shapes
                 cands = []
                 if isinstance(data, list):
                     cands = data
                 elif isinstance(data, dict):
-                    for key in ["results","products","items","data","cards","catalog"]:
+                    for key in ["results","products","items","data","cards","catalog",
+                                "inventory","listings","skus"]:
                         val = data.get(key)
                         if isinstance(val, list) and val:
                             cands = val
                             break
-                if not cands or not isinstance(cands[0], dict): return
-                if any(k in cands[0] for k in ["name","productName","cleanName","title"]):
-                    intercepted.append(cands)
-            except Exception: pass
+                    # Also try nested: data.results.products etc.
+                    if not cands and isinstance(data.get("data"), dict):
+                        for key in ["results","products","items","cards"]:
+                            val = data["data"].get(key)
+                            if isinstance(val, list) and val:
+                                cands = val
+                                break
+                if not cands:
+                    return
+                if not isinstance(cands[0], dict):
+                    return
+                if any(k in cands[0] for k in ["name","productName","cleanName","title",
+                                                 "productTitle","cardName"]):
+                    intercepted.append((url, cands))
+            except Exception:
+                pass
 
         page.on("response", on_resp)
+
         try:
-            # Use domcontentloaded + explicit wait — faster than networkidle
-            await page.goto(search_url, wait_until="domcontentloaded", timeout=20000)
-            # Wait for XHR results to arrive (up to 8s)
-            for _ in range(8):
+            await page.goto(search_url, wait_until="domcontentloaded", timeout=25000)
+            # Wait up to 12s for XHR results — TCGPlayer Pro is a React SPA
+            for _ in range(12):
                 await page.wait_for_timeout(1000)
-                if intercepted: break
-        except Exception: pass
+                if intercepted:
+                    break
+        except Exception:
+            pass
+
+        # DOM fallback: try to scrape rendered product cards if XHR gave nothing
+        if not intercepted:
+            try:
+                # Wait a bit more for React to render
+                await page.wait_for_timeout(3000)
+                dom_results = await _scrape_tcgpro_dom(page, store, query, search_url)
+            except Exception:
+                pass
+
         await browser.close()
 
+    # Process intercepted XHR data
     results = []
     ql = query.lower()
-    for item_list in intercepted:
-        for item in item_list[:20]:
-            if not isinstance(item, dict): continue
-            name = (item.get("name") or item.get("productName") or
-                    item.get("cleanName") or item.get("title") or "")
-            if not name: continue
-            # Filter to only items matching our query
-            if ql not in name.lower(): continue
 
-            price = None
-            for pk in ["marketPrice","lowPrice","price","lowestPrice","minPrice","retailPrice","salePrice"]:
-                v = item.get(pk)
-                if v is not None:
-                    try:
-                        price = float(str(v).replace("$","").replace(",",""))
-                        if price > 0: break
-                    except Exception: pass
-            if price is None:
-                for pk2 in ["pricing","prices","priceData"]:
-                    nested = item.get(pk2)
-                    if isinstance(nested,dict):
-                        for pk3 in ["market","low","mid","direct"]:
-                            v = nested.get(pk3)
-                            if v:
-                                try:
-                                    price = float(str(v).replace("$","").replace(",",""))
-                                    if price > 0: break
-                                except Exception: pass
-                    if price: break
+    # Process ALL intercepted batches (not just the first), deduplicate
+    seen_names = set()
+    for (intercept_url, item_list) in intercepted:
+        for item in item_list:
+            if not isinstance(item, dict):
+                continue
+            name = (item.get("name") or item.get("productName") or
+                    item.get("cleanName") or item.get("title") or
+                    item.get("productTitle") or item.get("cardName") or "")
+            if not name:
+                continue
+            if not name_matches(name, query):
+                continue
+            if name in seen_names:
+                continue
+            seen_names.add(name)
+
+            price = _extract_tcg_price(item)
 
             qty = item.get("quantity") or item.get("qty") or item.get("stock") or 1
             try:
-                if int(str(qty).split(".")[0]) <= 0: continue
-            except Exception: pass
+                if int(str(qty).split(".")[0]) <= 0:
+                    continue
+            except Exception:
+                pass
 
-            slug = item.get("slug") or item.get("handle") or item.get("urlKey") or ""
-            item_url = (f"{store['url']}/product/{slug.lstrip('/')}"
-                        if slug and not slug.startswith("http") else slug or search_url)
+            # Build URL — try slug, then productId, then fall back to search URL
+            item_url = _build_tcgpro_url(item, store, search_url)
 
             results.append({
                 "name":      clean_name(name),
@@ -205,9 +272,116 @@ async def search_tcgpro(store, query):
                 "available": True,
                 "url":       item_url,
             })
-        if results: break
+
+    # Use DOM results if XHR gave nothing
+    if not results and dom_results:
+        results = dom_results
 
     return (results, None) if results else ([], "No results found" if not intercepted else "No matching items")
+
+def _extract_tcg_price(item):
+    """Extract the best available price from a TCGPlayer Pro item dict."""
+    price = None
+    for pk in ["marketPrice","lowPrice","price","lowestPrice","minPrice",
+               "retailPrice","salePrice","directLowPrice","normalPrice"]:
+        v = item.get(pk)
+        if v is not None:
+            try:
+                price = float(str(v).replace("$","").replace(",",""))
+                if price > 0:
+                    return price
+            except Exception:
+                pass
+    # Try nested pricing objects
+    for pk2 in ["pricing","prices","priceData","marketPrices"]:
+        nested = item.get(pk2)
+        if isinstance(nested, dict):
+            for pk3 in ["market","low","mid","direct","normal","retail"]:
+                v = nested.get(pk3)
+                if v:
+                    try:
+                        price = float(str(v).replace("$","").replace(",",""))
+                        if price > 0:
+                            return price
+                    except Exception:
+                        pass
+    return None
+
+def _build_tcgpro_url(item, store, fallback_url):
+    """Build the best product URL for a TCGPlayer Pro item."""
+    # Try direct URL field first
+    for url_key in ["url","productUrl","link","href"]:
+        v = item.get(url_key)
+        if v and isinstance(v, str) and v.startswith("http"):
+            return v
+
+    # Try slug + productLine to build path
+    slug = item.get("slug") or item.get("handle") or item.get("urlKey") or ""
+    product_line = item.get("productLineName") or item.get("categoryName") or ""
+
+    if slug:
+        if slug.startswith("http"):
+            return slug
+        # TCGPlayer Pro URL pattern: /product/{productLine}/{slug} but URL-safe
+        pl_slug = product_line.lower().replace(" ","_").replace(":","") if product_line else "magic_the_gathering"
+        return f"{store['url']}/product/{pl_slug}/{slug.lstrip('/')}"
+
+    # Try productId as last resort — links to product page by ID
+    pid = item.get("productId") or item.get("id")
+    if pid:
+        return f"{store['url']}/product/{pid}"
+
+    return fallback_url
+
+async def _scrape_tcgpro_dom(page, store, query, fallback_url):
+    """Fallback: scrape rendered product cards from TCGPlayer Pro DOM."""
+    results = []
+    ql = query.lower()
+    try:
+        # TCGPlayer Pro renders product cards with various selectors
+        selectors = [
+            "[data-testid='product-card']",
+            ".product-card",
+            ".search-result",
+            "[class*='ProductCard']",
+            "[class*='product-tile']",
+            "article",
+        ]
+        for sel in selectors:
+            cards = await page.query_selector_all(sel)
+            if not cards:
+                continue
+            for card in cards[:20]:
+                try:
+                    # Get all text content
+                    text = await card.inner_text()
+                    if ql not in text.lower():
+                        continue
+                    # Try to get the link
+                    anchor = await card.query_selector("a")
+                    href = await anchor.get_attribute("href") if anchor else ""
+                    if href and not href.startswith("http"):
+                        href = store["url"] + href
+                    # Try to extract price from text
+                    price_match = re.search(r'\$(\d+\.\d{2})', text)
+                    price = float(price_match.group(1)) if price_match else None
+                    # First non-empty line is usually the name
+                    lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+                    name = lines[0] if lines else query
+                    results.append({
+                        "name":      clean_name(name),
+                        "set":       extract_set(name),
+                        "price":     price,
+                        "available": True,
+                        "url":       href or fallback_url,
+                    })
+                except Exception:
+                    continue
+            if results:
+                break  # found a working selector
+    except Exception:
+        pass
+    return results
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
@@ -249,7 +423,7 @@ def api_search():
 def api_debug():
     """Verbose per-URL probe of every Shopify endpoint so we can see exactly what's failing."""
     sc = cloudscraper.create_scraper()
-    query = "lightning bolt"
+    query = request.args.get("q", "lightning bolt")
     q = req.utils.quote(query)
     out = {}
 
@@ -267,21 +441,22 @@ def api_debug():
             try:
                 r = sc.get(url, headers=HEADERS, timeout=12)
                 ct = r.headers.get("content-type", "")
-                entry = {"status": r.status_code, "ct": ct[:80]}
+                entry = {"status": r.status_code, "ct": ct[:80], "url": url}
                 if "json" in ct:
                     try:
                         d = r.json()
                         products = d.get("products") or d.get("results") or []
                         entry["products"] = len(products)
                         if products:
-                            entry["first"] = products[0].get("title","?")[:60]
-                            # search for lightning bolt
-                            lb = [p for p in products if "lightning" in (p.get("title","")).lower()]
-                            entry["lb_matches"] = len(lb)
+                            entry["first_title"] = products[0].get("title","?")[:80]
+                            matches = [p for p in products if name_matches(p.get("title",""), query)]
+                            entry["query_matches"] = len(matches)
+                            if matches:
+                                entry["match_sample"] = matches[0].get("title","")[:80]
                     except Exception as je:
                         entry["json_err"] = str(je)
                 else:
-                    entry["body_preview"] = r.text[:120].strip()
+                    entry["body_preview"] = r.text[:200].strip()
             except Exception as e:
                 entry = {"error": str(e)[:120]}
             probe[label] = entry
