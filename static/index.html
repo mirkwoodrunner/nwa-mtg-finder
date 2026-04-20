@@ -499,6 +499,12 @@ async function searchStore(storeId) {
   if (storeState[storeId]?.status === 'loading') return;
   if (!currentQuery) return;
 
+  // Results already cached for this card — just redisplay, no new fetch
+  if (storeState[storeId]?.status === 'done') {
+    showStoreResults(storeId, storeState[storeId]);
+    return;
+  }
+
   storeState[storeId] = { status:'loading', results:[], error:null };
   renderStoreBtns();
   showStoreResults(storeId, null);

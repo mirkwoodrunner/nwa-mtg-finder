@@ -29,14 +29,32 @@ def clean_name(t): return re.sub(r"\s*\[.*?\]\s*","",t).strip()
 def extract_set(t):
     m=re.search(r"\[(.+?)\]",t); return m.group(1) if m else ""
 
+def _base_name(title):
+    """Return the bare card name: strip [SET], (variant), and ' — Foil'/'-NM' suffixes."""
+    t = re.sub(r"\s*\[.*?\]\s*", "", title).strip()
+    t = re.sub(r"\s*\(.*?\)\s*", "", t).strip()
+    t = re.split(r"\s+[-—]\s+", t)[0].strip()
+    return t.lower()
+
 def name_matches(title, query):
-    """Fuzzy match: all query words must appear in title (handles reordering/extra words)."""
-    tl = title.lower()
-    ql = query.lower()
-    if ql in tl:
+    """Match a store product title against a card name query.
+
+    Primary: exact match on the base card name (strips set/variant/foil info).
+    This ensures "Fog" never matches "Fog Bank" or "Wall of Fog".
+
+    Fallback for multi-word queries: substring / all-words match to handle
+    unusual store title formats (e.g. "Lightning Bolt NM [M10]").
+    """
+    ql = query.lower().strip()
+    if _base_name(title) == ql:
         return True
-    words = [w for w in ql.split() if len(w) > 2]
-    return all(w in tl for w in words) if words else False
+    if " " in ql:
+        tl = title.lower()
+        if ql in tl:
+            return True
+        words = [w for w in ql.split() if len(w) > 2]
+        return all(w in tl for w in words) if words else False
+    return False
 
 def parse_shopify(products, base_url, query):
     """Parse a batch of Shopify products, returning ALL variants that match the query."""
