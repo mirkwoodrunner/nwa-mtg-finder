@@ -207,7 +207,8 @@ async def search_tcgpro(store, query):
                         return
                     skip_keywords = ["analytics", "telemetry", "tracking", "gtm", "segment",
                                      "hotjar", "sentry", "favicon", "font", "css"]
-                    if any(k in url.lower() for k in skip_keywords):
+                    url_path = response.url.lower().split("?")[0]
+                    if any(k in url_path for k in skip_keywords):
                         return
                     try:
                         data = await response.json()
@@ -233,8 +234,12 @@ async def search_tcgpro(store, query):
                         return
                     if not isinstance(cands[0], dict):
                         return
-                    if any(k in cands[0] for k in ["name","productName","cleanName","title",
-                                                     "productTitle","cardName"]):
+                    has_name = any(
+                        any(k in item for k in ["name","productName","cleanName","title",
+                                                "productTitle","cardName"])
+                        for item in cands[:5]
+                    )
+                    if has_name:
                         intercepted.append((url, cands))
                 except Exception:
                     pass
@@ -246,6 +251,7 @@ async def search_tcgpro(store, query):
                 for _ in range(12):
                     await page.wait_for_timeout(1000)
                     if intercepted:
+                        await page.wait_for_timeout(2000)  # grace period for companion XHR calls
                         break
             except Exception:
                 pass
@@ -259,8 +265,9 @@ async def search_tcgpro(store, query):
 
             await browser.close()
 
-    except Exception:
-        return ([], None)
+    except Exception as e:
+        traceback.print_exc()
+        return ([], str(e))
 
     results = []
     seen_names = set()
