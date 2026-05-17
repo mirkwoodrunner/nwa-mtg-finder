@@ -226,11 +226,30 @@ async def search_tcgpro(store, query):
 
 
 async def _extract_next_data(page, store, query, fallback_url):
-    """Extract products from window.__NEXT_DATA__ (Next.js SSR blob)."""
+    """Extract products from Next.js SSR data.
+
+    Next.js puts data in <script id="__NEXT_DATA__" type="application/json">.
+    That script tag is in the server-rendered HTML before app.js runs, so we
+    read it from the DOM element directly — bot detection blocking app.js
+    execution doesn't prevent us from accessing it.
+    """
     sid = store["id"]
     try:
-        next_data = await page.evaluate("() => window.__NEXT_DATA__ || null")
-        if not next_data or not isinstance(next_data, dict):
+        raw = await page.evaluate("""() => {
+            const el = document.getElementById('__NEXT_DATA__');
+            if (el && el.textContent) return el.textContent;
+            if (window.__NEXT_DATA__) return JSON.stringify(window.__NEXT_DATA__);
+            return null;
+        }""")
+        if not raw:
+            print(f"[{sid}] no __NEXT_DATA__ element or window var", flush=True)
+            return []
+        try:
+            next_data = json.loads(raw)
+        except Exception:
+            print(f"[{sid}] __NEXT_DATA__ JSON parse failed", flush=True)
+            return []
+        if not isinstance(next_data, dict):
             print(f"[{sid}] no __NEXT_DATA__", flush=True)
             return []
 
