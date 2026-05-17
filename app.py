@@ -30,13 +30,13 @@ def extract_set(t):
     m=re.search(r"\[(.+?)\]",t); return m.group(1) if m else ""
 
 def name_matches(title, query):
-    """Fuzzy match: all query words must appear in title (handles reordering/extra words)."""
+    """All query words must appear as whole words in title (not as substrings of longer words)."""
     tl = title.lower()
     ql = query.lower()
     if ql in tl:
         return True
-    words = [w for w in ql.split() if len(w) > 2]
-    return all(w in tl for w in words) if words else False
+    words = ql.split()
+    return all(re.search(r'\b' + re.escape(w) + r'\b', tl) for w in words) if words else False
 
 def parse_shopify(products, base_url, query):
     """Parse a batch of Shopify products, returning ALL variants that match the query."""
