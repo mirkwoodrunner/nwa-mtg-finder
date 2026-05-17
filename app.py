@@ -485,6 +485,9 @@ def api_debug():
 
     return jsonify(out)
 
+@app.route("/debug-panel")
+def debug_panel(): return send_from_directory("static", "debug.html")
+
 @app.route("/health")
 def health(): return jsonify({"status":"ok"})
 
