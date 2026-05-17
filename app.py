@@ -143,7 +143,7 @@ def search_shopify(store, query):
     #    If the configured slug returns nothing, discover the real slug via /collections.json,
     #    then fall back to the "all" collection.
     configured_had_pages = False
-    for pg in range(1, 9):
+    for pg in range(1, 21):
         d = get_json_with_retry(sc, f"{store['url']}/collections/{store['col']}/products.json?limit=250&page={pg}")
         if d is None:
             break
@@ -158,7 +158,7 @@ def search_shopify(store, query):
     if not configured_had_pages:
         discovered = _find_mtg_collection(sc, store)
         fallback_col = discovered if (discovered and discovered != store["col"]) else "all"
-        for pg in range(1, 9):
+        for pg in range(1, 21):
             d = get_json_with_retry(sc, f"{store['url']}/collections/{fallback_col}/products.json?limit=250&page={pg}")
             if d is None:
                 break
@@ -189,7 +189,7 @@ def _parse_tcgpro_products(data, store, query, fallback_url):
 
     name_keys = ["name","productName","cleanName","title","productTitle","cardName"]
     results = []
-    seen_names = set()
+    seen_ids = set()
 
     for candidate_list in _find_product_lists(data):
         has_name = any(any(k in item for k in name_keys) for item in candidate_list[:5])
@@ -201,9 +201,10 @@ def _parse_tcgpro_products(data, store, query, fallback_url):
             name = next((item.get(k) for k in name_keys if item.get(k)), "")
             if not name or not name_matches(name, query):
                 continue
-            if name in seen_names:
+            dedup_key = item.get("productId") or item.get("id") or name
+            if dedup_key in seen_ids:
                 continue
-            seen_names.add(name)
+            seen_ids.add(dedup_key)
             qty = item.get("quantity") or item.get("qty") or item.get("stock") or 1
             try:
                 if int(str(qty).split(".")[0]) <= 0:
