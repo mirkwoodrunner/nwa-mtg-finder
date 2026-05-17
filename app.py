@@ -149,35 +149,33 @@ def search_shopify(store, query):
         products = resources.get("products", [])
         add_results(parse_shopify(products, store["url"], query))
 
-    # 2. Paginate collection — always runs on top of search to catch anything missed.
-    #    If the configured slug returns nothing, discover the real slug via /collections.json,
-    #    then fall back to the "all" collection.
-    configured_had_pages = False
-    for pg in range(1, 21):
-        d = get_json_with_retry(sc, f"{store['url']}/collections/{store['col']}/products.json?limit=250&page={pg}")
-        if d is None:
-            break
-        products = d.get("products", [])
-        if not products:
-            break
-        configured_had_pages = True
-        add_results(parse_shopify(products, store["url"], query))
-        if len(products) < 250:
-            break
+    # 2. Paginate collection in alphabetical order — always runs to catch anything missed.
+    #    Forcing title-ascending ensures "Stock Up" lands at ~75% through the alphabet
+    #    regardless of the store's default sort order (often creation date, not alpha).
+    #    Also scan newest-first for belt-and-suspenders coverage of very large stores.
+    def _scan_collection(col):
+        had_pages = False
+        for sort in ("title-ascending", "created-descending"):
+            max_pg = 21 if sort == "title-ascending" else 4
+            for pg in range(1, max_pg):
+                url = (f"{store['url']}/collections/{col}/products.json"
+                       f"?limit=250&page={pg}&sort_by={sort}")
+                d = get_json_with_retry(sc, url)
+                if d is None:
+                    break
+                products = d.get("products", [])
+                if not products:
+                    break
+                had_pages = True
+                add_results(parse_shopify(products, store["url"], query))
+                if len(products) < 250:
+                    break
+        return had_pages
 
-    if not configured_had_pages:
+    if not _scan_collection(store["col"]):
         discovered = _find_mtg_collection(sc, store)
         fallback_col = discovered if (discovered and discovered != store["col"]) else "all"
-        for pg in range(1, 21):
-            d = get_json_with_retry(sc, f"{store['url']}/collections/{fallback_col}/products.json?limit=250&page={pg}")
-            if d is None:
-                break
-            products = d.get("products", [])
-            if not products:
-                break
-            add_results(parse_shopify(products, store["url"], query))
-            if len(products) < 250:
-                break
+        _scan_collection(fallback_col)
 
     return (all_results, None) if all_results else ([], None)
 
