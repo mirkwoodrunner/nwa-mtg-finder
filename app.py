@@ -222,52 +222,54 @@ def _parse_tcgpro_products(data, store, query, fallback_url):
 
 
 def _search_tcgpro_http(store, query):
-    """Fetch TCGPlayer Pro search page with cloudscraper and parse any embedded data."""
-    search_url = (f"{store['url']}/search/products"
-                  f"?productLineName=Magic%3A+The+Gathering&q={req.utils.quote(query)}")
-    sid = store["id"]
-    try:
-        scraper = cloudscraper.create_scraper(
-            browser={"browser": "chrome", "platform": "darwin", "mobile": False}
-        )
-        resp = scraper.get(search_url, headers=HEADERS, timeout=20)
-        ct = resp.headers.get("content-type", "")
-        print(f"[{sid}] HTTP {resp.status_code} ct={ct[:40]} len={len(resp.text)}", flush=True)
+    """POST directly to TCGPlayer Pro's catalog search API."""
+    base_url = store["url"]
+    api_url  = f"{base_url}/api/catalog/search"
+    sid      = store["id"]
+    referer  = (f"{base_url}/search/products"
+                f"?productLineName=Magic%3A+The+Gathering&q={req.utils.quote(query)}")
 
-        if resp.status_code != 200:
+    api_headers = {
+        "User-Agent":      UA,
+        "Accept":          "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Content-Type":    "application/json",
+        "Origin":          base_url,
+        "Referer":         referer,
+        "Sec-Fetch-Dest":  "empty",
+        "Sec-Fetch-Mode":  "cors",
+        "Sec-Fetch-Site":  "same-origin",
+    }
+    payload = {
+        "query":   query,
+        "context": {"productLineName": "Magic: The Gathering"},
+        "filters": {},
+        "from":    0,
+        "size":    48,
+        "sort":    [{"field": "in-stock-price-sort", "order": "asc"}],
+    }
+
+    try:
+        session = req.Session()
+        # Seed the ASP.NET session cookie with a quick GET before the API call.
+        session.get(base_url, headers={"User-Agent": UA}, timeout=15)
+
+        r = session.post(api_url, json=payload, headers=api_headers, timeout=20)
+        print(f"[{sid}] API POST {r.status_code} ct={r.headers.get('content-type','')[:50]}", flush=True)
+
+        if r.status_code != 200:
+            print(f"[{sid}] API non-200: {r.text[:200]}", flush=True)
             return None
 
-        html = resp.text
-        print(f"[{sid}] HTML[:300]: {html[:300]!r}", flush=True)
+        data = r.json()
+        print(f"[{sid}] API response keys: {list(data.keys())}", flush=True)
 
-        # Try embedded __NEXT_DATA__ script tag
-        m = re.search(r'<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>',
-                      html, re.DOTALL)
-        if m:
-            try:
-                data = json.loads(m.group(1))
-                page_props = data.get("props", {}).get("pageProps", data)
-                results = _parse_tcgpro_products(page_props, store, query, search_url)
-                print(f"[{sid}] HTTP __NEXT_DATA__: {len(results)} result(s)", flush=True)
-                return results
-            except Exception as ex:
-                print(f"[{sid}] HTTP __NEXT_DATA__ parse error: {ex}", flush=True)
+        results = _parse_tcgpro_products(data, store, query, referer)
+        print(f"[{sid}] API: {len(results)} result(s)", flush=True)
+        return results
 
-        # Try any other inline JSON blobs that look like product lists
-        for m in re.finditer(r'(\[{.*?"(?:name|productName|cleanName)".*?}\])', html, re.DOTALL):
-            try:
-                data = json.loads(m.group(1))
-                results = _parse_tcgpro_products(data, store, query, search_url)
-                if results:
-                    print(f"[{sid}] HTTP inline JSON: {len(results)} result(s)", flush=True)
-                    return results
-            except Exception:
-                continue
-
-        print(f"[{sid}] HTTP: no product data found in HTML", flush=True)
-        return None  # signal: fall through to Playwright
     except Exception as ex:
-        print(f"[{sid}] HTTP exception: {ex}", flush=True)
+        print(f"[{sid}] API exception: {ex}", flush=True)
         return None
 
 
@@ -313,8 +315,8 @@ async def search_tcgpro(store, query):
 
 def _extract_tcg_price(item):
     """Extract the best available price from a TCGPlayer Pro item dict."""
-    for pk in ["marketPrice","lowPrice","price","lowestPrice","minPrice",
-               "retailPrice","salePrice","directLowPrice","normalPrice"]:
+    for pk in ["lowestListingPrice","marketPrice","lowPrice","price","lowestPrice",
+               "minPrice","retailPrice","salePrice","directLowPrice","normalPrice"]:
         v = item.get(pk)
         if v is not None:
             try:
