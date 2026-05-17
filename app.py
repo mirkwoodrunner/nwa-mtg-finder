@@ -176,8 +176,7 @@ def search_shopify(store, query):
 async def search_tcgpro(store, query):
     search_url = (f"{store['url']}/search/products"
                   f"?productLineName=Magic%3A+The+Gathering&q={req.utils.quote(query)}")
-    intercepted = []
-    dom_results = []
+    sid = store["id"]
 
     try:
         async with async_playwright() as p:
@@ -190,98 +189,30 @@ async def search_tcgpro(store, query):
                 locale="en-US",
             )
             page = await context.new_page()
-
             await stealth_async(page)
-
-            sid = store["id"]
-
-            async def on_resp(response):
-                try:
-                    url = response.url
-                    status = response.status
-                    ct = response.headers.get("content-type", "")
-
-                    # Log every non-trivial response for diagnosis
-                    if not any(ext in url.lower() for ext in
-                               [".png",".jpg",".svg",".woff",".ico",".css",".js"]):
-                        print(f"[{sid}] XHR {status} {ct[:30]} {url[:120]}", flush=True)
-
-                    # Capture responses from any tcgplayer subdomain (store domain
-                    # OR shared API hosts like catalog.tcgplayer.com)
-                    if "tcgplayer" not in url.lower():
-                        return
-                    if status != 200:
-                        print(f"[{sid}] skip non-200: {status} {url[:80]}", flush=True)
-                        return
-                    if "json" not in ct:
-                        print(f"[{sid}] skip non-json ct={ct[:40]} {url[:80]}", flush=True)
-                        return
-                    skip_keywords = ["analytics", "telemetry", "tracking", "gtm", "segment",
-                                     "hotjar", "sentry", "favicon", "font", "css"]
-                    url_path = url.lower().split("?")[0]
-                    if any(k in url_path for k in skip_keywords):
-                        return
-                    try:
-                        data = await response.json()
-                    except Exception:
-                        print(f"[{sid}] json parse failed {url[:80]}", flush=True)
-                        return
-                    cands = []
-                    if isinstance(data, list):
-                        cands = data
-                    elif isinstance(data, dict):
-                        for key in ["results","products","items","data","cards","catalog",
-                                    "inventory","listings","skus"]:
-                            val = data.get(key)
-                            if isinstance(val, list) and val:
-                                cands = val
-                                break
-                        if not cands and isinstance(data.get("data"), dict):
-                            for key in ["results","products","items","cards"]:
-                                val = data["data"].get(key)
-                                if isinstance(val, list) and val:
-                                    cands = val
-                                    break
-                    if not cands:
-                        top_keys = list(data.keys())[:8] if isinstance(data, dict) else type(data).__name__
-                        print(f"[{sid}] no cands from {url[:80]} keys={top_keys}", flush=True)
-                        return
-                    if not isinstance(cands[0], dict):
-                        print(f"[{sid}] cands[0] not dict ({type(cands[0])}) {url[:80]}", flush=True)
-                        return
-                    has_name = any(
-                        any(k in item for k in ["name","productName","cleanName","title",
-                                                "productTitle","cardName"])
-                        for item in cands[:5]
-                    )
-                    if has_name:
-                        print(f"[{sid}] CAPTURED {len(cands)} items from {url[:80]}", flush=True)
-                        intercepted.append((url, cands))
-                    else:
-                        sample_keys = list(cands[0].keys())[:10]
-                        print(f"[{sid}] no name field, sample keys={sample_keys} {url[:80]}", flush=True)
-                except Exception as ex:
-                    print(f"[{sid}] on_resp exception: {ex}", flush=True)
-
-            page.on("response", on_resp)
 
             try:
                 await page.goto(search_url, wait_until="domcontentloaded", timeout=25000)
-                for _ in range(12):
-                    await page.wait_for_timeout(1000)
-                    if intercepted:
-                        await page.wait_for_timeout(2000)  # grace period for companion XHR calls
-                        break
             except Exception:
                 pass
 
-            print(f"[{sid}] wait loop done: {len(intercepted)} intercept batch(es)", flush=True)
+            title = ""
+            try:
+                title = await page.title()
+            except Exception:
+                pass
+            print(f"[{sid}] page title: {title!r}", flush=True)
 
-            if not intercepted:
+            # Primary: Next.js SSR data (no XHR — products are in window.__NEXT_DATA__)
+            results = await _extract_next_data(page, store, query, search_url)
+            print(f"[{sid}] __NEXT_DATA__: {len(results)} result(s)", flush=True)
+
+            # Fallback: scrape rendered DOM
+            if not results:
                 try:
                     await page.wait_for_timeout(3000)
-                    dom_results = await _scrape_tcgpro_dom(page, store, query, search_url)
-                    print(f"[{sid}] DOM fallback: {len(dom_results)} result(s)", flush=True)
+                    results = await _scrape_tcgpro_dom(page, store, query, search_url)
+                    print(f"[{sid}] DOM fallback: {len(results)} result(s)", flush=True)
                 except Exception as ex:
                     print(f"[{sid}] DOM fallback exception: {ex}", flush=True)
 
@@ -291,44 +222,69 @@ async def search_tcgpro(store, query):
         traceback.print_exc()
         return ([], str(e))
 
-    results = []
-    seen_names = set()
-    for (intercept_url, item_list) in intercepted:
-        for item in item_list:
-            if not isinstance(item, dict):
-                continue
-            name = (item.get("name") or item.get("productName") or
-                    item.get("cleanName") or item.get("title") or
-                    item.get("productTitle") or item.get("cardName") or "")
-            if not name:
-                continue
-            if not name_matches(name, query):
-                continue
-            if name in seen_names:
-                continue
-            seen_names.add(name)
-
-            price = _extract_tcg_price(item)
-
-            qty = item.get("quantity") or item.get("qty") or item.get("stock") or 1
-            try:
-                if int(str(qty).split(".")[0]) <= 0:
-                    continue
-            except Exception:
-                pass
-
-            results.append({
-                "name":      clean_name(name),
-                "set":       item.get("setName") or item.get("groupName") or extract_set(name),
-                "price":     price,
-                "available": True,
-                "url":       _build_tcgpro_url(item, store, search_url),
-            })
-
-    if not results and dom_results:
-        results = dom_results
-
     return (results, None) if results else ([], None)
+
+
+async def _extract_next_data(page, store, query, fallback_url):
+    """Extract products from window.__NEXT_DATA__ (Next.js SSR blob)."""
+    sid = store["id"]
+    try:
+        next_data = await page.evaluate("() => window.__NEXT_DATA__ || null")
+        if not next_data or not isinstance(next_data, dict):
+            print(f"[{sid}] no __NEXT_DATA__", flush=True)
+            return []
+
+        # Walk the tree recursively to find any list of product-like dicts
+        def _find_product_lists(obj, depth=0):
+            if depth > 8:
+                return []
+            if isinstance(obj, list):
+                if obj and isinstance(obj[0], dict):
+                    return [obj]
+                return []
+            if isinstance(obj, dict):
+                found = []
+                for v in obj.values():
+                    found.extend(_find_product_lists(v, depth + 1))
+                return found
+            return []
+
+        name_keys = ["name","productName","cleanName","title","productTitle","cardName"]
+        results = []
+        seen_names = set()
+
+        page_props = next_data.get("props", {}).get("pageProps", next_data)
+        for candidate_list in _find_product_lists(page_props):
+            has_name = any(any(k in item for k in name_keys) for item in candidate_list[:5])
+            if not has_name:
+                continue
+            for item in candidate_list:
+                if not isinstance(item, dict):
+                    continue
+                name = next((item.get(k) for k in name_keys if item.get(k)), "")
+                if not name or not name_matches(name, query):
+                    continue
+                if name in seen_names:
+                    continue
+                seen_names.add(name)
+                qty = item.get("quantity") or item.get("qty") or item.get("stock") or 1
+                try:
+                    if int(str(qty).split(".")[0]) <= 0:
+                        continue
+                except Exception:
+                    pass
+                results.append({
+                    "name":      clean_name(name),
+                    "set":       item.get("setName") or item.get("groupName") or extract_set(name),
+                    "price":     _extract_tcg_price(item),
+                    "available": True,
+                    "url":       _build_tcgpro_url(item, store, fallback_url),
+                })
+
+        return results
+    except Exception as ex:
+        print(f"[{sid}] __NEXT_DATA__ exception: {ex}", flush=True)
+        return []
 
 def _extract_tcg_price(item):
     """Extract the best available price from a TCGPlayer Pro item dict."""
