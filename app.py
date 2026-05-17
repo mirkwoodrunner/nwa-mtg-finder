@@ -193,26 +193,38 @@ async def search_tcgpro(store, query):
 
             await stealth_async(page)
 
+            sid = store["id"]
+
             async def on_resp(response):
                 try:
                     url = response.url
+                    status = response.status
+                    ct = response.headers.get("content-type", "")
+
+                    # Log every non-trivial response for diagnosis
+                    if not any(ext in url.lower() for ext in
+                               [".png",".jpg",".svg",".woff",".ico",".css",".js"]):
+                        print(f"[{sid}] XHR {status} {ct[:30]} {url[:120]}", flush=True)
+
                     # Capture responses from any tcgplayer subdomain (store domain
                     # OR shared API hosts like catalog.tcgplayer.com)
                     if "tcgplayer" not in url.lower():
                         return
-                    if response.status != 200:
+                    if status != 200:
+                        print(f"[{sid}] skip non-200: {status} {url[:80]}", flush=True)
                         return
-                    ct = response.headers.get("content-type", "")
                     if "json" not in ct:
+                        print(f"[{sid}] skip non-json ct={ct[:40]} {url[:80]}", flush=True)
                         return
                     skip_keywords = ["analytics", "telemetry", "tracking", "gtm", "segment",
                                      "hotjar", "sentry", "favicon", "font", "css"]
-                    url_path = response.url.lower().split("?")[0]
+                    url_path = url.lower().split("?")[0]
                     if any(k in url_path for k in skip_keywords):
                         return
                     try:
                         data = await response.json()
                     except Exception:
+                        print(f"[{sid}] json parse failed {url[:80]}", flush=True)
                         return
                     cands = []
                     if isinstance(data, list):
@@ -231,8 +243,11 @@ async def search_tcgpro(store, query):
                                     cands = val
                                     break
                     if not cands:
+                        top_keys = list(data.keys())[:8] if isinstance(data, dict) else type(data).__name__
+                        print(f"[{sid}] no cands from {url[:80]} keys={top_keys}", flush=True)
                         return
                     if not isinstance(cands[0], dict):
+                        print(f"[{sid}] cands[0] not dict ({type(cands[0])}) {url[:80]}", flush=True)
                         return
                     has_name = any(
                         any(k in item for k in ["name","productName","cleanName","title",
@@ -240,9 +255,13 @@ async def search_tcgpro(store, query):
                         for item in cands[:5]
                     )
                     if has_name:
+                        print(f"[{sid}] CAPTURED {len(cands)} items from {url[:80]}", flush=True)
                         intercepted.append((url, cands))
-                except Exception:
-                    pass
+                    else:
+                        sample_keys = list(cands[0].keys())[:10]
+                        print(f"[{sid}] no name field, sample keys={sample_keys} {url[:80]}", flush=True)
+                except Exception as ex:
+                    print(f"[{sid}] on_resp exception: {ex}", flush=True)
 
             page.on("response", on_resp)
 
@@ -256,12 +275,15 @@ async def search_tcgpro(store, query):
             except Exception:
                 pass
 
+            print(f"[{sid}] wait loop done: {len(intercepted)} intercept batch(es)", flush=True)
+
             if not intercepted:
                 try:
                     await page.wait_for_timeout(3000)
                     dom_results = await _scrape_tcgpro_dom(page, store, query, search_url)
-                except Exception:
-                    pass
+                    print(f"[{sid}] DOM fallback: {len(dom_results)} result(s)", flush=True)
+                except Exception as ex:
+                    print(f"[{sid}] DOM fallback exception: {ex}", flush=True)
 
             await browser.close()
 
