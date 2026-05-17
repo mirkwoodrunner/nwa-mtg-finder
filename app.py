@@ -173,11 +173,115 @@ def search_shopify(store, query):
 
 # ── TCGPlayer Pro ─────────────────────────────────────────────────────────────
 
+def _parse_tcgpro_products(data, store, query, fallback_url):
+    """Walk any dict/list tree to find product-like item lists and filter by query."""
+    def _find_product_lists(obj, depth=0):
+        if depth > 8:
+            return []
+        if isinstance(obj, list):
+            return [obj] if obj and isinstance(obj[0], dict) else []
+        if isinstance(obj, dict):
+            found = []
+            for v in obj.values():
+                found.extend(_find_product_lists(v, depth + 1))
+            return found
+        return []
+
+    name_keys = ["name","productName","cleanName","title","productTitle","cardName"]
+    results = []
+    seen_names = set()
+
+    for candidate_list in _find_product_lists(data):
+        has_name = any(any(k in item for k in name_keys) for item in candidate_list[:5])
+        if not has_name:
+            continue
+        for item in candidate_list:
+            if not isinstance(item, dict):
+                continue
+            name = next((item.get(k) for k in name_keys if item.get(k)), "")
+            if not name or not name_matches(name, query):
+                continue
+            if name in seen_names:
+                continue
+            seen_names.add(name)
+            qty = item.get("quantity") or item.get("qty") or item.get("stock") or 1
+            try:
+                if int(str(qty).split(".")[0]) <= 0:
+                    continue
+            except Exception:
+                pass
+            results.append({
+                "name":      clean_name(name),
+                "set":       item.get("setName") or item.get("groupName") or extract_set(name),
+                "price":     _extract_tcg_price(item),
+                "available": True,
+                "url":       _build_tcgpro_url(item, store, fallback_url),
+            })
+
+    return results
+
+
+def _search_tcgpro_http(store, query):
+    """Fetch TCGPlayer Pro search page with cloudscraper and parse any embedded data."""
+    search_url = (f"{store['url']}/search/products"
+                  f"?productLineName=Magic%3A+The+Gathering&q={req.utils.quote(query)}")
+    sid = store["id"]
+    try:
+        scraper = cloudscraper.create_scraper(
+            browser={"browser": "chrome", "platform": "darwin", "mobile": False}
+        )
+        resp = scraper.get(search_url, headers=HEADERS, timeout=20)
+        ct = resp.headers.get("content-type", "")
+        print(f"[{sid}] HTTP {resp.status_code} ct={ct[:40]} len={len(resp.text)}", flush=True)
+
+        if resp.status_code != 200:
+            return None
+
+        html = resp.text
+        print(f"[{sid}] HTML[:300]: {html[:300]!r}", flush=True)
+
+        # Try embedded __NEXT_DATA__ script tag
+        m = re.search(r'<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>',
+                      html, re.DOTALL)
+        if m:
+            try:
+                data = json.loads(m.group(1))
+                page_props = data.get("props", {}).get("pageProps", data)
+                results = _parse_tcgpro_products(page_props, store, query, search_url)
+                print(f"[{sid}] HTTP __NEXT_DATA__: {len(results)} result(s)", flush=True)
+                return results
+            except Exception as ex:
+                print(f"[{sid}] HTTP __NEXT_DATA__ parse error: {ex}", flush=True)
+
+        # Try any other inline JSON blobs that look like product lists
+        for m in re.finditer(r'(\[{.*?"(?:name|productName|cleanName)".*?}\])', html, re.DOTALL):
+            try:
+                data = json.loads(m.group(1))
+                results = _parse_tcgpro_products(data, store, query, search_url)
+                if results:
+                    print(f"[{sid}] HTTP inline JSON: {len(results)} result(s)", flush=True)
+                    return results
+            except Exception:
+                continue
+
+        print(f"[{sid}] HTTP: no product data found in HTML", flush=True)
+        return None  # signal: fall through to Playwright
+    except Exception as ex:
+        print(f"[{sid}] HTTP exception: {ex}", flush=True)
+        return None
+
+
 async def search_tcgpro(store, query):
     search_url = (f"{store['url']}/search/products"
                   f"?productLineName=Magic%3A+The+Gathering&q={req.utils.quote(query)}")
     sid = store["id"]
 
+    # Primary: direct HTTP fetch (fast, avoids Playwright bot detection)
+    results = _search_tcgpro_http(store, query)
+    if results is not None:
+        return (results, None)
+
+    # Fallback: Playwright (handles JS-rendered pages)
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True,
@@ -192,30 +296,12 @@ async def search_tcgpro(store, query):
             await stealth_async(page)
 
             try:
-                await page.goto(search_url, wait_until="domcontentloaded", timeout=25000)
+                await page.goto(search_url, wait_until="networkidle", timeout=25000)
             except Exception:
                 pass
 
-            title = ""
-            try:
-                title = await page.title()
-            except Exception:
-                pass
-            print(f"[{sid}] page title: {title!r}", flush=True)
-
-            # Primary: Next.js SSR data (no XHR — products are in window.__NEXT_DATA__)
-            results = await _extract_next_data(page, store, query, search_url)
-            print(f"[{sid}] __NEXT_DATA__: {len(results)} result(s)", flush=True)
-
-            # Fallback: scrape rendered DOM
-            if not results:
-                try:
-                    await page.wait_for_timeout(3000)
-                    results = await _scrape_tcgpro_dom(page, store, query, search_url)
-                    print(f"[{sid}] DOM fallback: {len(results)} result(s)", flush=True)
-                except Exception as ex:
-                    print(f"[{sid}] DOM fallback exception: {ex}", flush=True)
-
+            results = await _scrape_tcgpro_dom(page, store, query, search_url)
+            print(f"[{sid}] Playwright DOM: {len(results)} result(s)", flush=True)
             await browser.close()
 
     except Exception as e:
@@ -224,86 +310,6 @@ async def search_tcgpro(store, query):
 
     return (results, None) if results else ([], None)
 
-
-async def _extract_next_data(page, store, query, fallback_url):
-    """Extract products from Next.js SSR data.
-
-    Next.js puts data in <script id="__NEXT_DATA__" type="application/json">.
-    That script tag is in the server-rendered HTML before app.js runs, so we
-    read it from the DOM element directly — bot detection blocking app.js
-    execution doesn't prevent us from accessing it.
-    """
-    sid = store["id"]
-    try:
-        raw = await page.evaluate("""() => {
-            const el = document.getElementById('__NEXT_DATA__');
-            if (el && el.textContent) return el.textContent;
-            if (window.__NEXT_DATA__) return JSON.stringify(window.__NEXT_DATA__);
-            return null;
-        }""")
-        if not raw:
-            print(f"[{sid}] no __NEXT_DATA__ element or window var", flush=True)
-            return []
-        try:
-            next_data = json.loads(raw)
-        except Exception:
-            print(f"[{sid}] __NEXT_DATA__ JSON parse failed", flush=True)
-            return []
-        if not isinstance(next_data, dict):
-            print(f"[{sid}] no __NEXT_DATA__", flush=True)
-            return []
-
-        # Walk the tree recursively to find any list of product-like dicts
-        def _find_product_lists(obj, depth=0):
-            if depth > 8:
-                return []
-            if isinstance(obj, list):
-                if obj and isinstance(obj[0], dict):
-                    return [obj]
-                return []
-            if isinstance(obj, dict):
-                found = []
-                for v in obj.values():
-                    found.extend(_find_product_lists(v, depth + 1))
-                return found
-            return []
-
-        name_keys = ["name","productName","cleanName","title","productTitle","cardName"]
-        results = []
-        seen_names = set()
-
-        page_props = next_data.get("props", {}).get("pageProps", next_data)
-        for candidate_list in _find_product_lists(page_props):
-            has_name = any(any(k in item for k in name_keys) for item in candidate_list[:5])
-            if not has_name:
-                continue
-            for item in candidate_list:
-                if not isinstance(item, dict):
-                    continue
-                name = next((item.get(k) for k in name_keys if item.get(k)), "")
-                if not name or not name_matches(name, query):
-                    continue
-                if name in seen_names:
-                    continue
-                seen_names.add(name)
-                qty = item.get("quantity") or item.get("qty") or item.get("stock") or 1
-                try:
-                    if int(str(qty).split(".")[0]) <= 0:
-                        continue
-                except Exception:
-                    pass
-                results.append({
-                    "name":      clean_name(name),
-                    "set":       item.get("setName") or item.get("groupName") or extract_set(name),
-                    "price":     _extract_tcg_price(item),
-                    "available": True,
-                    "url":       _build_tcgpro_url(item, store, fallback_url),
-                })
-
-        return results
-    except Exception as ex:
-        print(f"[{sid}] __NEXT_DATA__ exception: {ex}", flush=True)
-        return []
 
 def _extract_tcg_price(item):
     """Extract the best available price from a TCGPlayer Pro item dict."""
