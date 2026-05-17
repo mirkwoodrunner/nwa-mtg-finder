@@ -115,8 +115,9 @@ def search_shopify(store, query):
                 seen_keys.add(key)
                 all_results.append(r)
 
-    # 1. Try Shopify/BinderPOS search endpoint with pagination
+    # 1. Try Shopify/BinderPOS search endpoint with pagination.
     #    BinderPOS returns ≤20 results per page; paginate up to 5 pages.
+    #    Also try the Shopify predictive search API which works on all storefronts.
     search_endpoint_worked = False
     for path_template in [
         f"/search?q={q}&type=product&view=json",
@@ -138,6 +139,15 @@ def search_shopify(store, query):
                 break  # last page
         if search_endpoint_worked:
             break  # first working search endpoint wins
+
+    # Shopify predictive search — always available regardless of theme/template.
+    predictive_url = (f"{store['url']}/search/suggest.json"
+                      f"?q={q}&resources[type]=product&resources[limit]=20")
+    d = get_json_with_retry(sc, predictive_url)
+    if d:
+        resources = d.get("resources", {}).get("results", {})
+        products = resources.get("products", [])
+        add_results(parse_shopify(products, store["url"], query))
 
     # 2. Paginate collection — always runs on top of search to catch anything missed.
     #    If the configured slug returns nothing, discover the real slug via /collections.json,
