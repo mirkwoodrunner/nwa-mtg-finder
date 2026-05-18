@@ -520,6 +520,46 @@ def api_debug():
                 entry = {"error": str(e)[:120]}
             probe[label] = entry
 
+        # Cursor pagination probe: follow up to 5 pages of the named collection
+        # and report whether Link headers are being returned.
+        cursor_probe = {"pages": 0, "total_products": 0, "has_link_header": False, "query_matches": 0}
+        next_url = f"{store['url']}/collections/{store['col']}/products.json?limit=250"
+        for _ in range(5):
+            try:
+                r = sc.get(next_url, headers=HEADERS, timeout=12)
+                if not r.ok:
+                    cursor_probe["stopped"] = f"HTTP {r.status_code} on page {cursor_probe['pages']+1}"
+                    cursor_probe["body_preview"] = r.text[:200].strip()
+                    break
+                ct = r.headers.get("content-type", "")
+                if "json" not in ct:
+                    cursor_probe["stopped"] = f"non-JSON ({ct[:60]}) on page {cursor_probe['pages']+1}"
+                    break
+                d = r.json()
+                products = d.get("products", [])
+                cursor_probe["pages"] += 1
+                cursor_probe["total_products"] += len(products)
+                matches = [p for p in products if name_matches(p.get("title", ""), query)]
+                cursor_probe["query_matches"] += len(matches)
+                if cursor_probe["pages"] == 1:
+                    cursor_probe["first_title"] = products[0].get("title", "")[:80] if products else ""
+
+                link_header = r.headers.get("Link") or r.headers.get("link") or ""
+                next_link = parse_next_link(link_header)
+                if next_link:
+                    cursor_probe["has_link_header"] = True
+                    next_url = next_link
+                elif len(products) == 250:
+                    cursor_probe["numeric_fallback_triggered"] = True
+                    # Don't actually follow numeric fallback — just note it and stop
+                    break
+                else:
+                    break
+            except Exception as e:
+                cursor_probe["error"] = str(e)[:120]
+                break
+        probe["cursor_pagination"] = cursor_probe
+
         out[sid] = probe
 
     return jsonify(out)
