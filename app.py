@@ -101,6 +101,13 @@ def _find_mtg_collection(sc, store):
         pass
     return None
 
+def parse_next_link(link_header):
+    """Extract the rel=next URL from a Shopify Link header, or return None."""
+    if not link_header:
+        return None
+    match = re.search(r'<([^>]+)>;\s*rel="next"', link_header)
+    return match.group(1) if match else None
+
 def search_shopify(store, query):
     sc = cloudscraper.create_scraper()
     q  = req.utils.quote(query)
@@ -149,33 +156,51 @@ def search_shopify(store, query):
         products = resources.get("products", [])
         add_results(parse_shopify(products, store["url"], query))
 
-    # 2. Paginate collection in alphabetical order — always runs to catch anything missed.
-    #    Forcing title-ascending ensures "Stock Up" lands at ~75% through the alphabet
-    #    regardless of the store's default sort order (often creation date, not alpha).
-    #    Also scan newest-first for belt-and-suspenders coverage of very large stores.
-    def _scan_collection(col):
-        had_pages = False
-        for sort in ("title-ascending", "created-descending"):
-            max_pg = 21 if sort == "title-ascending" else 4
-            for pg in range(1, max_pg):
-                url = (f"{store['url']}/collections/{col}/products.json"
-                       f"?limit=250&page={pg}&sort_by={sort}")
-                d = get_json_with_retry(sc, url)
-                if d is None:
-                    break
-                products = d.get("products", [])
-                if not products:
-                    break
-                had_pages = True
-                add_results(parse_shopify(products, store["url"], query))
-                if len(products) < 250:
-                    break
-        return had_pages
+    # 2. Paginate collection — cursor-aware for Gear Gaming, numeric fallback for Final Boss.
+    for collection in [store["col"], "all"]:
+        collection_had_pages = False
+        next_url = f"{store['url']}/collections/{collection}/products.json?limit=250"
+        page_num = 1
+        cursor_page = 0
 
-    if not _scan_collection(store["col"]):
-        discovered = _find_mtg_collection(sc, store)
-        fallback_col = discovered if (discovered and discovered != store["col"]) else "all"
-        _scan_collection(fallback_col)
+        while next_url:
+            try:
+                r = sc.get(next_url, headers=HEADERS, timeout=12)
+                if not r.ok:
+                    break
+                ct = r.headers.get("content-type", "").lower()
+                if "json" not in ct:
+                    break
+                d = r.json()
+            except Exception:
+                break
+
+            products = d.get("products", [])
+            if not products:
+                break
+
+            collection_had_pages = True
+            add_results(parse_shopify(products, store["url"], query))
+
+            link_header = r.headers.get("Link") or r.headers.get("link") or ""
+            next_link = parse_next_link(link_header)
+
+            if next_link:
+                cursor_page += 1
+                if cursor_page >= 40:
+                    break
+                next_url = next_link
+            elif len(products) == 250:
+                page_num += 1
+                next_url = f"{store['url']}/collections/{collection}/products.json?limit=250&page={page_num}"
+            else:
+                next_url = None
+
+            if page_num > 20 and not next_link:
+                break
+
+        if collection_had_pages:
+            break
 
     return (all_results, None) if all_results else ([], None)
 
