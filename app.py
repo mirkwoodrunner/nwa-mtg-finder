@@ -493,7 +493,9 @@ def api_debug():
         urls_to_try = [
             ("search_json",   f"{store['url']}/search?q={q}&type=product&view=json"),
             ("search_plain",  f"{store['url']}/search?q={q}&view=json"),
-            ("col_page1",     f"{store['url']}/collections/{store['col']}/products.json?limit=10&page=1"),
+            ("predictive",    f"{store['url']}/search/suggest.json?q={q}&resources[type]=product&resources[limit]=20"),
+            ("col_page1",     f"{store['url']}/collections/{store['col']}/products.json?limit=250&page=1"),
+            ("col_page2",     f"{store['url']}/collections/{store['col']}/products.json?limit=250&page=2"),
             ("all_page1",     f"{store['url']}/collections/all/products.json?limit=10&page=1"),
         ]
         for label, url in urls_to_try:
@@ -504,14 +506,21 @@ def api_debug():
                 if "json" in ct:
                     try:
                         d = r.json()
-                        products = d.get("products") or d.get("results") or []
+                        # Handle predictive search nested structure
+                        if "resources" in d:
+                            products = d.get("resources", {}).get("results", {}).get("products", [])
+                        else:
+                            products = d.get("products") or d.get("results") or []
                         entry["products"] = len(products)
+                        entry["raw_keys"] = list(d.keys())[:8]
                         if products:
                             entry["first_title"] = products[0].get("title","?")[:80]
                             matches = [p for p in products if name_matches(p.get("title",""), query)]
                             entry["query_matches"] = len(matches)
                             if matches:
                                 entry["match_sample"] = matches[0].get("title","")[:80]
+                        elif not products and "errors" in d:
+                            entry["errors"] = str(d["errors"])[:200]
                     except Exception as je:
                         entry["json_err"] = str(je)
                 else:
