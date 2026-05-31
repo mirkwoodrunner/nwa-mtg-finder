@@ -1,0 +1,170 @@
+{
+  "shopify": {
+    "finalboss": {
+      "search?type+view=json": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://finalbossgames.com/search?q=Lightning%20Bolt&type=product&view=json",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "search?view=json": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://finalbossgames.com/search?q=Lightning%20Bolt&view=json",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "search.json": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://finalbossgames.com/search.json?q=Lightning%20Bolt&type=product",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "suggest.json": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://finalbossgames.com/search/suggest.json?q=Lightning%20Bolt&resources%5Btype%5D=product&resources%5Blimit%5D=20",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "col/singles/p1": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://finalbossgames.com/collections/singles/products.json?limit=250&page=1",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "col/all/p1": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://finalbossgames.com/collections/all/products.json?limit=10&page=1",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      }
+    },
+    "gearbv": {
+      "search?type+view=json": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://bentonville.geargamingstore.com/search?q=Lightning%20Bolt&type=product&view=json",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "search?view=json": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://bentonville.geargamingstore.com/search?q=Lightning%20Bolt&view=json",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "search.json": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://bentonville.geargamingstore.com/search.json?q=Lightning%20Bolt&type=product",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "suggest.json": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://bentonville.geargamingstore.com/search/suggest.json?q=Lightning%20Bolt&resources%5Btype%5D=product&resources%5Blimit%5D=20",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "col/mtg-singles-all-products/p1": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://bentonville.geargamingstore.com/collections/mtg-singles-all-products/products.json?limit=250&page=1",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "col/all/p1": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://bentonville.geargamingstore.com/collections/all/products.json?limit=10&page=1",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      }
+    },
+    "gearfv": {
+      "search?type+view=json": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://fayetteville.geargamingstore.com/search?q=Lightning%20Bolt&type=product&view=json",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "search?view=json": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://fayetteville.geargamingstore.com/search?q=Lightning%20Bolt&view=json",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "search.json": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://fayetteville.geargamingstore.com/search.json?q=Lightning%20Bolt&type=product",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "suggest.json": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://fayetteville.geargamingstore.com/search/suggest.json?q=Lightning%20Bolt&resources%5Btype%5D=product&resources%5Blimit%5D=20",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "col/mtg-singles-all-products/p1": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://fayetteville.geargamingstore.com/collections/mtg-singles-all-products/products.json?limit=250&page=1",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "col/all/p1": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://fayetteville.geargamingstore.com/collections/all/products.json?limit=10&page=1",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      }
+    }
+  },
+  "tcgpro": {
+    "chaos": {
+      "GET_search_page": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://chaosgamesnwa.tcgplayerpro.com/search/products?productLineName=Magic%3A+The+Gathering&q=Lightning%20Bolt",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "POST_catalog_api": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://chaosgamesnwa.tcgplayerpro.com/api/catalog/search",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      }
+    },
+    "xxplo": {
+      "GET_search_page": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://gamesexxplosion.tcgplayerpro.com/search/products?productLineName=Magic%3A+The+Gathering&q=Lightning%20Bolt",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      },
+      "POST_catalog_api": {
+        "status": 403,
+        "ct": "text/plain",
+        "final_url": "https://gamesexxplosion.tcgplayerpro.com/api/catalog/search",
+        "cloudflare": false,
+        "body_preview": "Host not in allowlist"
+      }
+    }
+  }
+}
