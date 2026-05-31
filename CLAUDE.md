@@ -117,3 +117,24 @@ or clear implementation instructions — not prose explanations.
 - **Silent failures are the primary enemy** — missing logging on exception handlers repeatedly obscures root causes
 - **Don't fight Cloudflare** — multiple approaches failed; deep links are the correct solution
 - **Shopify pagination must be full** — early-return patterns silently truncate real inventory
+
+---
+
+## Testing
+
+Run the test suite before every commit:
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ -v --tb=short
+```
+
+The suite auto-starts Flask on port 5001. All five stores are tested against "Stock Up" (confirmed in stock at all stores as of 2026-05-30). Tests fail loudly on zero results, malformed response shapes, and non-absolute URLs.
+
+Test layers:
+
+* `test_smoke.py` — /health, /api/debug, 400 error cases. Fast, no live store calls.
+* `test_helpers.py` — unit tests for name_matches, parse_shopify, clean_name, _extract_tcg_price. No network.
+* `test_api.py` — live /api/search against all 5 stores, parametrized. Requires internet access.
+
+`test_helpers.py` imports functions directly from `app.py`. If `app.py` is ever split into packages, those imports will need updating.
