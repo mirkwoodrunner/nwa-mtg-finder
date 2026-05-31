@@ -237,6 +237,28 @@ should be treated as approximate-to-obsolete.
 
 ---
 
+---
+
+## Playwright Stealth Test — 2026-05-31
+
+Tested whether Playwright + `stealth_async` (the same approach used for TCGPlayer Pro) could bypass
+the 403s that cloudscraper receives from Render's datacenter IPs on the three Shopify stores.
+
+**Result: Playwright stealth also blocked — all three Shopify stores enforce IP-level blocks that JS
+rendering cannot bypass.** Every endpoint (homepage warmup, all search paths, all collection paths)
+returned HTTP 403 with body `Host not in allowlist` before Playwright could execute any JavaScript
+or pass any challenge. Stealth evasion is irrelevant when the reverse proxy rejects the TCP
+connection at the host-matching layer.
+
+Residential proxy or direct store API access (e.g., a Shopify Partner API key for each store, or a
+proxy service with residential IPs) is required to reach these stores from a cloud deployment.
+
+Test script output saved in `test_shopify_playwright_output.txt`.
+
+**`app.py` was NOT modified.**
+
+---
+
 ## Recommended Fix Priority
 
 1. **Verify from Render that stores are actually reachable** — before any code fixes, hit
