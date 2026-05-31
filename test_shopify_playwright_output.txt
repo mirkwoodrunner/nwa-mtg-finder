@@ -1,0 +1,42 @@
+
+============================================================
+Store: finalboss  (https://finalbossgames.com)
+============================================================
+  Warming up: GET https://finalbossgames.com ...
+  Warmup status: 403
+  [✗] search_json: status=403 products=0  non-JSON (body starts: 'Host not in allowlist')
+  [✗] search_plain: status=403 products=0  non-JSON (body starts: 'Host not in allowlist')
+  [✗] predictive: status=403 products=0  non-JSON (body starts: 'Host not in allowlist')
+  [✗] col_page1: status=403 products=0  non-JSON (body starts: 'Host not in allowlist')
+  [✗] all_page1: status=403 products=0  non-JSON (body starts: 'Host not in allowlist')
+
+============================================================
+Store: gearbv  (https://bentonville.geargamingstore.com)
+============================================================
+  Warming up: GET https://bentonville.geargamingstore.com ...
+  Warmup status: 403
+  [✗] search_json: status=403 products=0  non-JSON (body starts: 'Host not in allowlist')
+  [✗] search_plain: status=403 products=0  non-JSON (body starts: 'Host not in allowlist')
+  [✗] predictive: status=403 products=0  non-JSON (body starts: 'Host not in allowlist')
+  [✗] col_page1: status=403 products=0  non-JSON (body starts: 'Host not in allowlist')
+  [✗] all_page1: status=403 products=0  non-JSON (body starts: 'Host not in allowlist')
+
+============================================================
+Store: gearfv  (https://fayetteville.geargamingstore.com)
+============================================================
+  Warming up: GET https://fayetteville.geargamingstore.com ...
+  Warmup status: 403
+  [✗] search_json: status=403 products=0  non-JSON (body starts: 'Host not in allowlist')
+  [✗] search_plain: status=403 products=0  non-JSON (body starts: 'Host not in allowlist')
+  [✗] predictive: status=403 products=0  non-JSON (body starts: 'Host not in allowlist')
+  [✗] col_page1: status=403 products=0  non-JSON (body starts: 'Host not in allowlist')
+  [✗] all_page1: status=403 products=0  non-JSON (body starts: 'Host not in allowlist')
+
+============================================================
+SUMMARY
+============================================================
+  finalboss: STILL BLOCKED or zero products
+  gearbv: STILL BLOCKED or zero products
+  gearfv: STILL BLOCKED or zero products
+
+RESULT: All stores still blocked. Do NOT patch app.py. Report findings.
